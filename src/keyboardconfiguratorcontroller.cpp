@@ -572,10 +572,18 @@ void KeyboardConfiguratorController::saveToKeyboard()
             const Key& key = selectedKeyboard().keys.at(keyIndex);
             const QColor& colour = m_customLightModeKeys->keys()[keyIndex];
 
-            int lbi = key.bufferIndex * 3;
-            ledFullBuffer[lbi] = colour.red();
-            ledFullBuffer[lbi + 1] = colour.green();
-            ledFullBuffer[lbi + 2] = colour.blue();
+            if (selectedKeyboard().rgb)
+            {
+                int lbi = key.bufferIndex * 3;
+                ledFullBuffer[lbi] = colour.red();
+                ledFullBuffer[lbi + 1] = colour.green();
+                ledFullBuffer[lbi + 2] = colour.blue();
+            }
+            else
+            {
+                // Single colour keyboards use one byte (on/off) per LED
+                ledFullBuffer[key.bufferIndex] = 0xff;
+            }
         }
 
         int ledBufferIndex = 0;

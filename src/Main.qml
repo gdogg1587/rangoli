@@ -146,34 +146,21 @@ ApplicationWindow {
         menu: Menu {
             id: systemTrayMenu
 
+            // Nested per-keyboard submenus crash Qt < 6.5 (QTBUG-55199),
+            // so list profiles flat and apply them to the first keyboard.
             Instantiator {
-                model: mainWindowController.connectedKeyboards
+                model: keyboardConfiguratorController.profiles
 
-                delegate: Menu {
-                    title: model.name
-
-                    id: kbMenuDel
-
-                    property int index: model.index
-
-                    Instantiator {
-                        model: keyboardConfiguratorController.profiles
-
-                        delegate: MenuItem {
-                            text: model.name
-                            onTriggered: {
-                                mainWindowController.loadKeyboard(kbMenuDel.index)
-                                keyboardConfiguratorController.selectedProfileIndex = model.index
-                            }
-                        }
-
-                        onObjectAdded: (index, object) => kbMenuDel.insertItem(index, object)
-                        onObjectRemoved: (index, object) => kbMenuDel.removeItem(object)
+                delegate: MenuItem {
+                    text: model.name
+                    onTriggered: {
+                        mainWindowController.loadKeyboard(0)
+                        keyboardConfiguratorController.selectedProfileIndex = model.index
                     }
                 }
 
-                onObjectAdded: (index, object) => systemTrayMenu.insertMenu(index, object)
-                onObjectRemoved: (index, object) => systemTrayMenu.removeMenu(object)
+                onObjectAdded: (index, object) => systemTrayMenu.insertItem(index, object)
+                onObjectRemoved: (index, object) => systemTrayMenu.removeItem(object)
             }
 
             MenuSeparator {}
@@ -399,7 +386,6 @@ ApplicationWindow {
         margins: 10
         modal: true
 
-        Material.roundedScale: GlobalProps.roundedScale
 
         Column {
             spacing: 10

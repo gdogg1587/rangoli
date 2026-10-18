@@ -88,7 +88,6 @@ Item {
         margins: 10
         modal: true
 
-        Material.roundedScale: GlobalProps.roundedScale
 
         property int index: -1
 
@@ -174,7 +173,6 @@ Item {
         margins: 10
         modal: true
 
-        Material.roundedScale: GlobalProps.roundedScale
 
         Column {
             spacing: 10
@@ -286,7 +284,6 @@ Item {
         margins: 10
         modal: true
 
-        Material.roundedScale: GlobalProps.roundedScale
 
         Item {
             anchors.fill: parent
@@ -531,7 +528,6 @@ Item {
         margins: 10
         modal: true
 
-        Material.roundedScale: GlobalProps.roundedScale
 
         width: Math.min(kbConfigurator.width - (margins * 2), 400)
 
