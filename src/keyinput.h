@@ -24,6 +24,9 @@ namespace KeyInput
     // The key a character is typed with, ignoring Shift (e.g. '!' -> 1)
     KeyCode::Code codeForCharacter(const QChar& character);
 
+    // Whether Shift has to be held to type a character on a US layout
+    bool needsShift(const QChar& character);
+
     // The key behind a native scan code from a Qt key event
     KeyCode::Code codeForNativeScanCode(const quint32& nativeScanCode);
 }

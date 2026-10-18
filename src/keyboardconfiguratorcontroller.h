@@ -25,6 +25,7 @@
 
 #include "customlightmodekeys.h"
 #include "customeffectmodel.h"
+#include "macromodel.h"
 #include "lightanimation.h"
 #include "modemodel.h"
 #include "key.h"
@@ -92,6 +93,12 @@ class KeyboardConfiguratorController : public QObject
     Q_PROPERTY(QSortFilterProxyModel* keyCodesProxy READ keyCodesProxy CONSTANT)
 
     Q_PROPERTY(CustomMappedKeys* customMappedKeys READ customMappedKeys CONSTANT)
+
+    Q_PROPERTY(MacroModel* macros READ macros CONSTANT)
+    Q_PROPERTY(int editingMacroSlot READ editingMacroSlot NOTIFY macroEditorChanged)
+    Q_PROPERTY(QString editingMacroName READ editingMacroName WRITE setEditingMacroName NOTIFY macroEditorChanged)
+    Q_PROPERTY(QVariantList editingMacroEvents READ editingMacroEvents NOTIFY macroEditorChanged)
+    Q_PROPERTY(bool editingMacroModified READ editingMacroModified NOTIFY macroEditorChanged)
 
     Q_PROPERTY(int topLeftX READ topLeftX CONSTANT)
     Q_PROPERTY(int topLeftY READ topLeftY CONSTANT)
@@ -171,6 +178,30 @@ public:
     QSortFilterProxyModel* keyCodesProxy();
     CustomMappedKeys* customMappedKeys();
 
+    MacroModel* macros();
+    int editingMacroSlot();
+    QString editingMacroName();
+    // Each event as {text, delay}
+    QVariantList editingMacroEvents();
+    bool editingMacroModified();
+
+    // Starts editing a copy of a macro slot
+    Q_INVOKABLE void editMacro(int slot);
+    // Adds a key going down or up. gapMs is the time since the previous event,
+    // used as its delay; 0 or less uses defaultDelayMs. False if the key is
+    // unknown or the macro is full.
+    Q_INVOKABLE bool recordMacroKey(int nativeScanCode, bool release, int gapMs, int defaultDelayMs);
+    // Adds the presses to type text, returns the characters with no key
+    Q_INVOKABLE QString addMacroText(const QString& text, int delayMs);
+    Q_INVOKABLE void setMacroEventDelay(int index, int delayMs);
+    Q_INVOKABLE void setAllMacroDelays(int delayMs);
+    Q_INVOKABLE void removeMacroEvent(int index);
+    Q_INVOKABLE void clearMacroEvents();
+    Q_INVOKABLE void saveEditingMacro();
+    Q_INVOKABLE void deleteMacro(int slot);
+    // Makes the key being remapped play a macro slot
+    Q_INVOKABLE void setSelectedKeyMacro(int slot);
+
     const int& topLeftX();
     const int& topLeftY();
     const int& bottomRightX();
@@ -197,6 +228,7 @@ public:
 signals:
     void loadName(const QString& name);
     void loadImage(const QString& imagePath);
+    void macroEditorChanged();
     void randomColoursChanged();
     void selectedColourChanged();
     void customLightModeKeysChanged();
@@ -229,6 +261,7 @@ public slots:
     void setRandomColours(const bool& randomColours);
     void setSelectedColour(const QColor& colour);
     void setUnsavedChanges(const bool& unsavedChanges);
+    void setEditingMacroName(const QString& name);
     void setSavingChanges(const bool& savingChanges);
     void setBrightness(const int& brightness);
     void setAnimation(const int& animation);
@@ -296,6 +329,15 @@ private:
     QPointer<ModeModel> m_modes;
 
     QPointer<CustomEffectModel> m_customEffects;
+
+    QPointer<MacroModel> m_macros;
+    int m_editingMacroSlot{-1};
+    Macro m_editingMacro;
+    bool m_editingMacroModified{false};
+    // The macro area went out with the save in progress
+    bool m_macroAreaPending{false};
+
+    bool addMacroEvent(const MacroEvent& event, int gapMs, int defaultDelayMs);
     int m_selectedCustomEffectIndex;
     bool m_customEffectModified;
 

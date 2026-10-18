@@ -31,6 +31,7 @@ KeyboardConfiguratorController::KeyboardConfiguratorController(QObject *parent)
       m_selectedMode{Mode::Light}, m_selectedLightModeIndex{0},
       m_modes{new ModeModel{this}},
       m_customEffects{new CustomEffectModel{this}},
+      m_macros{new MacroModel{this}},
       m_selectedCustomEffectIndex{-1}, m_customEffectModified{false},
       m_selectedProfileIndex{-1},
       m_brightness{5}, m_animation{5}, m_sleep{5},
@@ -40,6 +41,8 @@ KeyboardConfiguratorController::KeyboardConfiguratorController(QObject *parent)
       m_liveFrameInFlight{false}, m_liveFailures{0}, m_playing{false},
       m_startPlaybackAfterSave{false}, m_livePrepared{false}
 {
+    m_customMappedKeys->setMacros(m_macros);
+
     // Anything that changes the picked keys changes the preview
     connect(this, &KeyboardConfiguratorController::customLightModeKeysChanged,
             this, [this](){ preparePreview(); });
@@ -352,6 +355,255 @@ CustomMappedKeys *KeyboardConfiguratorController::customMappedKeys()
     return m_customMappedKeys.get();
 }
 
+MacroModel *KeyboardConfiguratorController::macros()
+{
+    return m_macros.get();
+}
+
+int KeyboardConfiguratorController::editingMacroSlot()
+{
+    return m_editingMacroSlot;
+}
+
+QString KeyboardConfiguratorController::editingMacroName()
+{
+    return m_editingMacro.name;
+}
+
+QVariantList KeyboardConfiguratorController::editingMacroEvents()
+{
+    QVariantList events;
+
+    for (auto&& event : m_editingMacro.events)
+    {
+        events << QVariantMap{{u"text"_s, event.text()}, {u"delay"_s, event.delayMs}};
+    }
+
+    return events;
+}
+
+bool KeyboardConfiguratorController::editingMacroModified()
+{
+    return m_editingMacroModified;
+}
+
+void KeyboardConfiguratorController::editMacro(int slot)
+{
+    if (slot < 0 || slot >= MacroModel::SlotCount) return;
+
+    m_editingMacroSlot = slot;
+    m_editingMacro = m_macros->macro(slot);
+    m_editingMacroModified = false;
+
+    emit macroEditorChanged();
+}
+
+void KeyboardConfiguratorController::setEditingMacroName(const QString &name)
+{
+    if (m_editingMacro.name == name) return;
+
+    m_editingMacro.name = name;
+    m_editingMacroModified = true;
+
+    emit macroEditorChanged();
+}
+
+bool KeyboardConfiguratorController::addMacroEvent(const MacroEvent &event, int gapMs, int defaultDelayMs)
+{
+    if (m_editingMacroSlot == -1 || m_editingMacro.events.size() >= MacroModel::MaxEvents) return false;
+
+    // The delay belongs to the event before, it is the wait after it
+    if (!m_editingMacro.events.isEmpty())
+    {
+        m_editingMacro.events.last().delayMs = qBound(0, gapMs > 0 ? gapMs : defaultDelayMs,
+                                                      MacroModel::MaxDelayMs);
+    }
+
+    m_editingMacro.events << event;
+    m_editingMacro.events.last().delayMs = qBound(0, defaultDelayMs, MacroModel::MaxDelayMs);
+    m_editingMacroModified = true;
+
+    return true;
+}
+
+bool KeyboardConfiguratorController::recordMacroKey(int nativeScanCode, bool release, int gapMs, int defaultDelayMs)
+{
+    const int code = KeyInput::codeForNativeScanCode(nativeScanCode);
+
+    MacroEvent event;
+    event.release = release;
+
+    if (code >= 0x010000 && code < 0x01000000)
+    {
+        event.modifier = true;
+        event.code = quint8(code >> 16);
+    }
+    else if (code >= 0x0100 && code < 0x010000)
+    {
+        event.code = quint8(code >> 8);
+    }
+    else
+    {
+        return false;
+    }
+
+    const bool added = addMacroEvent(event, gapMs, defaultDelayMs);
+    emit macroEditorChanged();
+    return added;
+}
+
+QString KeyboardConfiguratorController::addMacroText(const QString &text, int delayMs)
+{
+    QString unknown;
+
+    auto add = [this, delayMs](bool release, bool modifier, quint8 code) {
+        MacroEvent event;
+        event.release = release;
+        event.modifier = modifier;
+        event.code = code;
+        return addMacroEvent(event, 0, delayMs);
+    };
+
+    // Keys that can't be typed go in braces by name, e.g. {Tab} or {F5}
+    auto namedKey = [](const QString& name) {
+        const QString wanted = name.simplified().remove(u' ').toLower();
+
+        for (auto it = KeyCode::Names.cbegin(); it != KeyCode::Names.cend(); ++it)
+        {
+            const int code = it.key();
+
+            // Only plain keys; modifiers on their own would just be tapped
+            if (code < 0x0100 || code >= 0x010000) continue;
+
+            if (QString(it.value()).remove(u' ').toLower() == wanted) return it.key();
+        }
+
+        return KeyCode::Key_Invalid;
+    };
+
+    for (int i = 0; i < text.size(); i++)
+    {
+        const QChar character = text.at(i);
+        KeyCode::Code code = KeyCode::Key_Invalid;
+        bool shift = false;
+
+        const int close = character == u'{' ? text.indexOf(u'}', i + 1) : -1;
+
+        if (close != -1)
+        {
+            const QString name = text.mid(i + 1, close - i - 1);
+            code = namedKey(name);
+            i = close;
+
+            if (code == KeyCode::Key_Invalid)
+            {
+                unknown += u"{%1}"_s.arg(name);
+                continue;
+            }
+        }
+        else
+        {
+            code = KeyInput::codeForCharacter(character);
+            shift = KeyInput::needsShift(character);
+
+            if (code == KeyCode::Key_Invalid)
+            {
+                if (!unknown.contains(character)) unknown += character;
+                continue;
+            }
+        }
+
+        const int needed = shift ? 4 : 2;
+
+        // Never leave a key or Shift held down because the macro ran out of room
+        if (m_editingMacro.events.size() + needed > MacroModel::MaxEvents) break;
+
+        if (shift) add(false, true, 0x02);
+        add(false, false, quint8(code >> 8));
+        add(true, false, quint8(code >> 8));
+        if (shift) add(true, true, 0x02);
+    }
+
+    emit macroEditorChanged();
+    return unknown;
+}
+
+void KeyboardConfiguratorController::setMacroEventDelay(int index, int delayMs)
+{
+    if (index < 0 || index >= m_editingMacro.events.size()) return;
+
+    m_editingMacro.events[index].delayMs = qBound(0, delayMs, MacroModel::MaxDelayMs);
+    m_editingMacroModified = true;
+
+    emit macroEditorChanged();
+}
+
+void KeyboardConfiguratorController::setAllMacroDelays(int delayMs)
+{
+    for (auto& event : m_editingMacro.events)
+    {
+        event.delayMs = qBound(0, delayMs, MacroModel::MaxDelayMs);
+    }
+
+    m_editingMacroModified = true;
+
+    emit macroEditorChanged();
+}
+
+void KeyboardConfiguratorController::removeMacroEvent(int index)
+{
+    if (index < 0 || index >= m_editingMacro.events.size()) return;
+
+    m_editingMacro.events.removeAt(index);
+    m_editingMacroModified = true;
+
+    emit macroEditorChanged();
+}
+
+void KeyboardConfiguratorController::clearMacroEvents()
+{
+    m_editingMacro.events.clear();
+    m_editingMacroModified = true;
+
+    emit macroEditorChanged();
+}
+
+void KeyboardConfiguratorController::saveEditingMacro()
+{
+    if (m_editingMacroSlot == -1) return;
+
+    m_macros->setMacro(m_editingMacroSlot, m_editingMacro);
+    m_editingMacroModified = false;
+
+    // Macros reach the keyboard with the next apply
+    setUnsavedChanges(true);
+
+    emit macroEditorChanged();
+}
+
+void KeyboardConfiguratorController::deleteMacro(int slot)
+{
+    m_macros->setMacro(slot, Macro{});
+
+    if (slot == m_editingMacroSlot) editMacro(slot);
+
+    setUnsavedChanges(true);
+}
+
+void KeyboardConfiguratorController::setSelectedKeyMacro(int slot)
+{
+    if (slot < 0)
+    {
+        m_customMappedKeys->clear();
+    }
+    else
+    {
+        m_customMappedKeys->setMacro(slot);
+    }
+
+    setUnsavedChanges(true);
+}
+
 const int &KeyboardConfiguratorController::topLeftX()
 {
     return selectedKeyboard().topLeftX;
@@ -495,6 +747,12 @@ void KeyboardConfiguratorController::init()
     connect(&connection, &HIDConnection::dataSentSuccessfully, this, [this](){
         setSavingChanges(false);
 
+        if (m_macroAreaPending)
+        {
+            m_macroAreaPending = false;
+            m_macros->markAreaWritten();
+        }
+
         if (m_startPlaybackAfterSave)
         {
             m_startPlaybackAfterSave = false;
@@ -522,6 +780,7 @@ void KeyboardConfiguratorController::init()
 
     connect(&connection, &HIDConnection::failedToSendData, this, [this](const QString& message){
         setSavingChanges(false);
+        m_macroAreaPending = false;
 
         if (m_startPlaybackAfterSave)
         {
@@ -551,6 +810,13 @@ void KeyboardConfiguratorController::load(const int &keyboardIndex)
     m_customEffects->load(QStringLiteral("%1:%2")
                           .arg(QString::number(selectedKeyboard().id.vid),
                                QString::number(selectedKeyboard().id.pid)));
+
+    m_macros->load(QStringLiteral("%1:%2")
+                   .arg(QString::number(selectedKeyboard().id.vid),
+                        QString::number(selectedKeyboard().id.pid)));
+    m_editingMacroSlot = -1;
+    m_editingMacroModified = false;
+    emit macroEditorChanged();
 
     m_selectedCustomEffectIndex = -1;
     emit selectedCustomEffectIndexChanged();
@@ -1533,7 +1799,8 @@ void KeyboardConfiguratorController::saveToKeyboard()
         m_liveTimer->stop();
     }
 
-    unsigned char** buffers = new unsigned char* [1 + CustomLightModeBuffersSize + KeyMapBuffersSize];
+    unsigned char** buffers = new unsigned char* [1 + CustomLightModeBuffersSize
+            + MacroModel::AreaPackets + KeyMapBuffersSize];
     int buffersIndex = 0;
 
     unsigned char* buffer = new unsigned char[BufferSize];
@@ -1591,6 +1858,30 @@ void KeyboardConfiguratorController::saveToKeyboard()
 
             buffers[buffersIndex++] = buffer;
         }
+    }
+
+    // Macros go before the key map that points at them, and only when they
+    // changed, so the keyboard's flash isn't rewritten on every apply
+    if (selectedKeyboard().keyMapEnabled && m_macros->areaChanged())
+    {
+        qInfo() << "Macros changed, send them too";
+
+        const QByteArray area = m_macros->area();
+
+        for (int i = 0; i < MacroModel::AreaPackets; i++)
+        {
+            unsigned char* buffer = new unsigned char[BufferSize];
+            std::fill_n(buffer, BufferSize, 0x00);
+
+            buffer[0] = 0x0a;
+            buffer[1] = MacroModel::AreaPackets;
+            buffer[2] = i + 1;
+            std::copy_n(area.constData() + i * 62, 62, buffer + 3);
+
+            buffers[buffersIndex++] = buffer;
+        }
+
+        m_macroAreaPending = true;
     }
 
     if (selectedKeyboard().keyMapEnabled)

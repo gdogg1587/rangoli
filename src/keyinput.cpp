@@ -28,7 +28,7 @@ KeyCode::Code codeForCharacter(const QChar &character)
     }
 
     static const QHash<QChar, KeyCode::Code> punctuation {
-        {u' ', KeyCode::Key_Space},
+        {u' ', KeyCode::Key_Space}, {u'\n', KeyCode::Key_Enter}, {u'\t', KeyCode::Key_Tab},
         {u'`', KeyCode::Key_Back_Quote}, {u'~', KeyCode::Key_Back_Quote},
         {u'!', KeyCode::Key_1}, {u'@', KeyCode::Key_2}, {u'#', KeyCode::Key_3},
         {u'$', KeyCode::Key_4}, {u'%', KeyCode::Key_5}, {u'^', KeyCode::Key_6},
@@ -47,6 +47,13 @@ KeyCode::Code codeForCharacter(const QChar &character)
     };
 
     return punctuation.value(c, KeyCode::Key_Invalid);
+}
+
+bool needsShift(const QChar &character)
+{
+    if (character.isLetter()) return character.isUpper();
+
+    return QStringLiteral("~!@#$%^&*()_+{}|:\"<>?").contains(character);
 }
 
 KeyCode::Code codeForNativeScanCode(const quint32 &nativeScanCode)

@@ -70,6 +70,11 @@ Item {
             keyMapClickKeyToEditPrompt.opacity = 0
         }
 
+        function onMacroEditorChanged()
+        {
+            keyMapMacroComboBox.refresh()
+        }
+
         function onRequestKbCanvasPaint()
         {
             kbCanvas.requestPaint()
@@ -540,11 +545,503 @@ Item {
     }
 
     Popup {
+        id: macroEditorPopup
+
+        anchors.centerIn: parent
+        margins: 10
+        modal: true
+
+        width: Math.min(820, kbConfigurator.width - 40)
+        height: Math.min(640, kbConfigurator.height - 40)
+
+        // Escape and clicks outside are keys to record while recording
+        closePolicy: macroEditor.recording ? Popup.NoAutoClose : (Popup.CloseOnEscape | Popup.CloseOnPressOutside)
+
+        onOpened: {
+            if (keyboardConfiguratorController.editingMacroSlot === -1)
+            {
+                keyboardConfiguratorController.editMacro(0)
+            }
+        }
+
+        onClosed: macroEditor.recording = false
+
+        Item {
+            id: macroEditor
+
+            anchors.fill: parent
+
+            property bool recording: false
+            property real lastEventTime: 0
+
+            // Slot to switch to once unsaved changes are dealt with
+            property int pendingSlot: -1
+
+            onRecordingChanged: lastEventTime = 0
+
+            function switchTo(slot)
+            {
+                if (slot === keyboardConfiguratorController.editingMacroSlot) return
+
+                if (keyboardConfiguratorController.editingMacroModified)
+                {
+                    pendingSlot = slot
+                    discardMacroChangesPopup.open()
+                    return
+                }
+
+                recording = false
+                keyboardConfiguratorController.editMacro(slot)
+            }
+
+            function record(event, release)
+            {
+                event.accepted = true
+                if (event.isAutoRepeat) return
+
+                var now = Date.now()
+                var gap = (macroKeepTiming.checked && lastEventTime > 0) ? now - lastEventTime : 0
+
+                var ok = keyboardConfiguratorController.recordMacroKey(event.nativeScanCode, release,
+                                                                       gap, macroDelaySpinBox.value)
+                if (ok)
+                {
+                    lastEventTime = now
+                    macroWarning.text = ""
+                    macroEventsList.positionViewAtEnd()
+                }
+                else
+                {
+                    macroWarning.text = keyboardConfiguratorController.editingMacroEvents.length >= 64
+                            ? qsTr("The macro is full (64 key presses and releases)")
+                            : qsTr("That key can't be recorded (Fn and some special keys can't)")
+                }
+            }
+
+            // Takes the focus while recording so presses on the real keyboard become events
+            Item {
+                id: macroRecorder
+
+                width: 0
+                height: 0
+
+                focus: macroEditor.recording
+
+                Keys.onPressed: (event) => macroEditor.record(event, false)
+                Keys.onReleased: (event) => macroEditor.record(event, true)
+
+                onActiveFocusChanged: if (!activeFocus) macroEditor.recording = false
+            }
+
+            Label {
+                id: macroEditorTitle
+
+                anchors {
+                    top: parent.top
+                    left: parent.left
+                }
+
+                text: qsTr("Macros")
+                font.bold: true
+                font.pixelSize: 15
+            }
+
+            ListView {
+                id: macroSlotsList
+
+                anchors {
+                    top: macroEditorTitle.bottom
+                    topMargin: 10
+                    left: parent.left
+                    bottom: macroEditorHint.top
+                    bottomMargin: 10
+                }
+
+                width: 200
+                clip: true
+
+                model: keyboardConfiguratorController.macros
+
+                delegate: ItemDelegate {
+                    width: macroSlotsList.width
+
+                    highlighted: index === keyboardConfiguratorController.editingMacroSlot
+
+                    text: (model.empty ? qsTr("%1. %2 (empty)") : qsTr("%1. %2"))
+                              .arg(index + 1).arg(model.name)
+                          + ((highlighted && keyboardConfiguratorController.editingMacroModified) ? " *" : "")
+
+                    opacity: model.empty && !highlighted ? 0.6 : 1
+
+                    focusPolicy: Qt.NoFocus
+
+                    onClicked: macroEditor.switchTo(index)
+                }
+            }
+
+            Column {
+                id: macroEditColumn
+
+                anchors {
+                    top: macroEditorTitle.bottom
+                    topMargin: 10
+                    left: macroSlotsList.right
+                    leftMargin: 20
+                    right: parent.right
+                }
+
+                spacing: 8
+
+                Row {
+                    spacing: 10
+
+                    TextField {
+                        width: 220
+
+                        placeholderText: qsTr("Macro %1").arg(keyboardConfiguratorController.editingMacroSlot + 1)
+                        text: keyboardConfiguratorController.editingMacroName
+
+                        enabled: !macroEditor.recording
+
+                        onTextEdited: keyboardConfiguratorController.editingMacroName = text
+                    }
+
+                    Label {
+                        anchors.verticalCenter: parent.verticalCenter
+
+                        text: qsTr("%1 / 64 events").arg(keyboardConfiguratorController.editingMacroEvents.length)
+                        opacity: 0.7
+                    }
+                }
+
+                Row {
+                    spacing: 10
+
+                    EnhancedButton {
+                        text: macroEditor.recording ? qsTr("Done") : qsTr("Record")
+                        highlighted: macroEditor.recording
+
+                        // Taking the focus would stop the recording before the click restarts it
+                        focusPolicy: Qt.NoFocus
+
+                        onClicked: {
+                            macroEditor.recording = !macroEditor.recording
+                            macroWarning.text = ""
+
+                            if (macroEditor.recording) macroRecorder.forceActiveFocus()
+                        }
+
+                        ToolTip.visible: hovered
+                        ToolTip.text: qsTr("Press keys on your keyboard to add them, including Shift, Ctrl, Alt and Tab. Every press and release is recorded.")
+                        ToolTip.delay: mainWindowController.toolTipDelay
+                        ToolTip.timeout: mainWindowController.toolTipTimeout
+                    }
+
+                    CheckBox {
+                        id: macroKeepTiming
+
+                        anchors.verticalCenter: parent.verticalCenter
+
+                        text: qsTr("Keep timing")
+                        focusPolicy: Qt.NoFocus
+
+                        ToolTip.visible: hovered
+                        ToolTip.text: qsTr("Record how long you actually waited between keys. Otherwise every key waits the delay set here.")
+                        ToolTip.delay: mainWindowController.toolTipDelay
+                        ToolTip.timeout: mainWindowController.toolTipTimeout
+                    }
+
+                    Label {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: qsTr("Delay")
+                    }
+
+                    SpinBox {
+                        id: macroDelaySpinBox
+
+                        from: 0
+                        to: 14000
+                        stepSize: 10
+                        value: 20
+                        editable: true
+
+                        focusPolicy: Qt.ClickFocus
+
+                        textFromValue: (value) => qsTr("%1 ms").arg(value)
+                        valueFromText: (text) => parseInt(text) || 0
+                    }
+                }
+
+                Row {
+                    spacing: 10
+
+                    TextField {
+                        id: macroTextField
+
+                        width: 260
+                        placeholderText: qsTr("Type text, e.g. Hello!{Tab}{Enter}")
+
+                        enabled: !macroEditor.recording
+
+                        function add()
+                        {
+                            if (text.length === 0) return
+
+                            var unknown = keyboardConfiguratorController.addMacroText(text, macroDelaySpinBox.value)
+
+                            macroWarning.text = unknown.length === 0 ? ""
+                                    : qsTr("Can't type: %1").arg(unknown)
+                            text = ""
+                            macroEventsList.positionViewAtEnd()
+                        }
+
+                        onAccepted: add()
+
+                        ToolTip.visible: hovered
+                        ToolTip.text: qsTr("Capitals and symbols add Shift by themselves. Put other keys in braces, like {Tab}, {Enter}, {Esc}, {Backspace}, {F5} or {Up}.")
+                        ToolTip.delay: mainWindowController.toolTipDelay
+                        ToolTip.timeout: mainWindowController.toolTipTimeout
+                    }
+
+                    EnhancedButton {
+                        anchors.verticalCenter: parent.verticalCenter
+
+                        text: qsTr("Add")
+                        enabled: macroTextField.text.length > 0 && !macroEditor.recording
+
+                        onClicked: macroTextField.add()
+                    }
+                }
+
+                Label {
+                    visible: macroEditor.recording
+
+                    text: qsTr("Recording, press keys on your keyboard. Click Done when finished.")
+                    color: Material.accentColor
+                }
+
+                Label {
+                    id: macroWarning
+
+                    visible: text.length > 0
+                    color: Material.color(Material.Red)
+                    font.pixelSize: 12
+                }
+            }
+
+            ListView {
+                id: macroEventsList
+
+                anchors {
+                    top: macroEditColumn.bottom
+                    topMargin: 8
+                    left: macroEditColumn.left
+                    right: parent.right
+                    bottom: macroButtons.top
+                    bottomMargin: 8
+                }
+
+                clip: true
+
+                // A count rather than the list, so editing a delay keeps the scroll position
+                model: keyboardConfiguratorController.editingMacroEvents.length
+
+                ScrollBar.vertical: ScrollBar {
+                    policy: ScrollBar.AsNeeded
+                }
+
+                delegate: Row {
+                    id: macroEventRow
+
+                    spacing: 10
+
+                    readonly property var event: keyboardConfiguratorController.editingMacroEvents[index]
+                    readonly property bool isLast: index === macroEventsList.count - 1
+
+                    Label {
+                        anchors.verticalCenter: parent.verticalCenter
+
+                        width: 30
+                        horizontalAlignment: Text.AlignRight
+                        text: index + 1
+                        opacity: 0.6
+                    }
+
+                    Label {
+                        anchors.verticalCenter: parent.verticalCenter
+
+                        width: 200
+                        elide: Text.ElideRight
+                        text: macroEventRow.event ? macroEventRow.event.text : ""
+                    }
+
+                    SpinBox {
+                        visible: !macroEventRow.isLast
+
+                        from: 0
+                        to: 14000
+                        stepSize: 10
+                        editable: true
+
+                        value: macroEventRow.event ? macroEventRow.event.delay : 0
+
+                        textFromValue: (value) => qsTr("then wait %1 ms").arg(value)
+                        valueFromText: (text) => parseInt(text.replace(/[^0-9]/g, "")) || 0
+
+                        onValueModified: keyboardConfiguratorController.setMacroEventDelay(index, value)
+                    }
+
+                    Label {
+                        anchors.verticalCenter: parent.verticalCenter
+
+                        visible: macroEventRow.isLast
+                        width: 140
+                        text: qsTr("end")
+                        opacity: 0.6
+                    }
+
+                    RoundButton {
+                        flat: true
+                        Material.foreground: Material.Red
+                        icon.source: Icons.get(Icons.Delete)
+
+                        enabled: !macroEditor.recording
+                        focusPolicy: Qt.NoFocus
+
+                        onClicked: keyboardConfiguratorController.removeMacroEvent(index)
+                    }
+                }
+            }
+
+            Row {
+                id: macroButtons
+
+                anchors {
+                    bottom: macroEditorHint.top
+                    bottomMargin: 10
+                    left: macroEditColumn.left
+                }
+
+                spacing: 10
+
+                EnhancedButton {
+                    text: qsTr("Set all delays")
+                    enabled: keyboardConfiguratorController.editingMacroEvents.length > 1 && !macroEditor.recording
+
+                    onClicked: keyboardConfiguratorController.setAllMacroDelays(macroDelaySpinBox.value)
+
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Give every key the delay set above")
+                    ToolTip.delay: mainWindowController.toolTipDelay
+                    ToolTip.timeout: mainWindowController.toolTipTimeout
+                }
+
+                EnhancedButton {
+                    text: qsTr("Clear")
+                    enabled: keyboardConfiguratorController.editingMacroEvents.length > 0 && !macroEditor.recording
+
+                    onClicked: keyboardConfiguratorController.clearMacroEvents()
+                }
+
+                EnhancedButton {
+                    text: qsTr("Save macro")
+                    highlighted: keyboardConfiguratorController.editingMacroModified
+                    enabled: keyboardConfiguratorController.editingMacroModified && !macroEditor.recording
+
+                    onClicked: keyboardConfiguratorController.saveEditingMacro()
+                }
+
+                EnhancedButton {
+                    text: qsTr("Close")
+                    flat: true
+                    highlighted: true
+
+                    onClicked: macroEditorPopup.close()
+                }
+            }
+
+            Label {
+                id: macroEditorHint
+
+                anchors {
+                    bottom: parent.bottom
+                    left: parent.left
+                    right: parent.right
+                }
+
+                wrapMode: Text.WordWrap
+                font.pixelSize: 12
+                opacity: 0.7
+
+                text: qsTr("Macros are stored on the keyboard and work on any computer. Saved macros are sent with Apply to keyboard. To put one on a key, click the key in Edit mode and pick it under Play macro.")
+            }
+        }
+    }
+
+    Popup {
+        id: discardMacroChangesPopup
+
+        anchors.centerIn: parent
+        margins: 10
+        modal: true
+
+        Column {
+            spacing: 10
+
+            Label {
+                text: qsTr("Discard changes to this macro?")
+                font.bold: true
+                font.pixelSize: 15
+            }
+
+            Row {
+                anchors.right: parent.right
+                spacing: 10
+
+                EnhancedButton {
+                    text: qsTr("Cancel")
+                    flat: true
+                    highlighted: true
+
+                    onClicked: discardMacroChangesPopup.close()
+                }
+
+                EnhancedButton {
+                    text: qsTr("Discard")
+                    flat: true
+                    highlighted: true
+
+                    onClicked: {
+                        discardMacroChangesPopup.close()
+                        macroEditor.recording = false
+                        keyboardConfiguratorController.editMacro(macroEditor.pendingSlot)
+                    }
+                }
+
+                EnhancedButton {
+                    text: qsTr("Save")
+                    flat: true
+                    highlighted: true
+
+                    onClicked: {
+                        discardMacroChangesPopup.close()
+                        macroEditor.recording = false
+                        keyboardConfiguratorController.saveEditingMacro()
+                        keyboardConfiguratorController.editMacro(macroEditor.pendingSlot)
+                    }
+                }
+            }
+        }
+    }
+
+    Popup {
         id: configureKeyMapPopup
 
         anchors.centerIn: parent
         margins: 10
         modal: true
+
+        onOpened: keyMapMacroComboBox.refresh()
 
 
         Item {
@@ -640,6 +1137,54 @@ Item {
                         onCurrentIndexChanged: keyboardConfiguratorController.keyCodesProxy.setCurrentFilter(currentIndex)
                     }
 
+                    // A key can play one of the macros stored on the keyboard instead
+                    Row {
+                        spacing: 10
+
+                        Label {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: qsTr("Play macro")
+                        }
+
+                        ComboBox {
+                            id: keyMapMacroComboBox
+
+                            width: 200
+
+                            function refresh()
+                            {
+                                var choices = [qsTr("None")]
+                                var macros = keyboardConfiguratorController.macros
+
+                                for (var slot = 0; slot < macros.rowCount(); slot++)
+                                {
+                                    choices.push(macros.isEmpty(slot)
+                                                 ? qsTr("%1. %2 (empty)").arg(slot + 1).arg(macros.macroName(slot))
+                                                 : qsTr("%1. %2").arg(slot + 1).arg(macros.macroName(slot)))
+                                }
+
+                                model = choices
+                                currentIndex = keyboardConfiguratorController.customMappedKeys.selectedMacroSlot() + 1
+                            }
+
+                            onActivated: (index) => {
+                                keyboardConfiguratorController.setSelectedKeyMacro(index - 1)
+                                kbCanvas.requestPaint()
+                            }
+                        }
+                    }
+
+                    EnhancedButton {
+                        text: qsTr("Edit macros...")
+                        flat: true
+                        highlighted: true
+
+                        onClicked: {
+                            configureKeyMapPopup.close()
+                            macroEditorPopup.open()
+                        }
+                    }
+
                     Row {
                         spacing: 10
 
@@ -685,6 +1230,7 @@ Item {
                                         onClicked: {
                                             keyboardConfiguratorController.unsavedChanges = true
                                             keyboardConfiguratorController.customMappedKeys.add(model.code)
+                                            keyMapMacroComboBox.refresh()
                                         }
                                     }
                                 }
@@ -736,6 +1282,7 @@ Item {
                                         onClicked: {
                                             keyboardConfiguratorController.unsavedChanges = true
                                             keyboardConfiguratorController.customMappedKeys.remove(model.index)
+                                            keyMapMacroComboBox.refresh()
                                         }
                                     }
                                 }
@@ -908,6 +1455,38 @@ You can create an issue on GitHub, and I can guide you through the steps to accq
 
             ToolTip.visible: hovered
             ToolTip.text: qsTr("Configure Key Map")
+            ToolTip.delay: mainWindowController.toolTipDelay
+            ToolTip.timeout: mainWindowController.toolTipTimeout
+        }
+
+        EnhancedButton {
+            id: macrosButton
+            anchors.top: keyRemapModeButton.bottom
+            width: parent.width
+
+            topInset: 0
+            bottomInset: 0
+            background.implicitHeight: 50
+
+            visible: keyboardConfiguratorController.keyMapEnabled
+
+            flat: true
+
+            display: AbstractButton.TextUnderIcon
+            text: qsTr("Macros")
+            font.bold: false
+            font.pixelSize: 12
+            font.capitalization: Font.MixedCase
+
+            icon.source: Icons.get(Icons.Edit)
+
+            onClicked: macroEditorPopup.open()
+
+            Material.foreground: macroEditorPopup.opened
+                   ? Material.accentColor : ((Material.theme == Material.Light) ? "#000000" : "#ffffff")
+
+            ToolTip.visible: hovered
+            ToolTip.text: qsTr("Record macros to store on the keyboard")
             ToolTip.delay: mainWindowController.toolTipDelay
             ToolTip.timeout: mainWindowController.toolTipTimeout
         }
@@ -2161,6 +2740,9 @@ You can create an issue on GitHub, and I can guide you through the steps to accq
                                 EnhancedButton {
                                     text: sequenceEditor.recording ? qsTr("Done") : qsTr("Record")
                                     highlighted: sequenceEditor.recording
+
+                                    // Taking the focus would stop the recording before the click restarts it
+                                    focusPolicy: Qt.NoFocus
 
                                     onClicked: {
                                         sequenceEditor.recording = !sequenceEditor.recording
