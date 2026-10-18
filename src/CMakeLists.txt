@@ -13,6 +13,7 @@ GNU General Public License for more details.
 
 set(SOURCE_LIST
     customcolours.h customcolours.cpp
+    customeffectmodel.h customeffectmodel.cpp
     customlightmodekeys.h customlightmodekeys.cpp
     custommappedkeys.h custommappedkeys.cpp
     enhanceddialog.h enhanceddialog.cpp

@@ -167,6 +167,268 @@ Item {
     }
 
     Popup {
+        id: customEffectNamePopup
+
+        anchors.centerIn: parent
+        margins: 10
+        modal: true
+
+        // -1 saves the current keys as a new effect, otherwise renames that row
+        property int index: -1
+
+        function nextDefaultName()
+        {
+            var names = []
+            for (var i = 0; i < keyboardConfiguratorController.customEffects.rowCount(); i++)
+            {
+                names.push(keyboardConfiguratorController.customEffects.effectName(i))
+            }
+
+            var n = keyboardConfiguratorController.customEffects.rowCount() + 1
+            while (names.indexOf(qsTr("Custom Effect #%1").arg(n)) !== -1) n++
+
+            return qsTr("Custom Effect #%1").arg(n)
+        }
+
+        function showNew()
+        {
+            index = -1
+            customEffectNameTextField.text = nextDefaultName()
+            open()
+            customEffectNameTextField.selectAll()
+            customEffectNameTextField.forceActiveFocus()
+        }
+
+        function showRename(row, name)
+        {
+            index = row
+            customEffectNameTextField.text = name
+            open()
+            customEffectNameTextField.selectAll()
+            customEffectNameTextField.forceActiveFocus()
+        }
+
+        function accept()
+        {
+            if (customEffectNameTextField.text.length === 0) return
+
+            close()
+
+            if (index === -1)
+            {
+                keyboardConfiguratorController.saveAsNewCustomEffect(customEffectNameTextField.text)
+            }
+            else
+            {
+                keyboardConfiguratorController.setCustomEffectName(index, customEffectNameTextField.text)
+            }
+        }
+
+        Column {
+            anchors.fill: parent
+
+            spacing: 10
+
+            Label {
+                text: (customEffectNamePopup.index === -1) ? qsTr("Save as New Effect") : qsTr("Rename Effect")
+                font.bold: true
+                font.pixelSize: 15
+                bottomPadding: 10
+            }
+
+            Label {
+                text: qsTr("Name");
+            }
+
+            TextField {
+                id: customEffectNameTextField
+
+                width: 250
+
+                onAccepted: customEffectNamePopup.accept()
+            }
+
+            Row {
+                anchors {
+                    right: parent.right
+                }
+
+                spacing: 10
+
+                EnhancedButton {
+                    text: qsTr("Save")
+                    flat: true
+                    highlighted: true
+
+                    enabled: customEffectNameTextField.text.length > 0
+
+                    onClicked: customEffectNamePopup.accept()
+                }
+
+                EnhancedButton {
+                    text: qsTr("Cancel")
+                    flat: true
+                    highlighted: true
+
+                    onClicked: customEffectNamePopup.close()
+                }
+            }
+        }
+    }
+
+    Popup {
+        id: discardCustomEffectChangesPopup
+
+        anchors.centerIn: parent
+        margins: 10
+        modal: true
+
+        property var pendingAction: null
+
+        // Runs action straight away, or asks first if the selected effect has unsaved edits
+        function confirm(action)
+        {
+            if (!keyboardConfiguratorController.customEffectModified)
+            {
+                action()
+                return
+            }
+
+            pendingAction = action
+            open()
+        }
+
+        function finish()
+        {
+            close()
+            var action = pendingAction
+            pendingAction = null
+            action()
+        }
+
+        Column {
+            anchors.fill: parent
+
+            spacing: 10
+
+            Label {
+                text: qsTr("Unsaved Effect Changes")
+                font.bold: true
+                font.pixelSize: 15
+                bottomPadding: 10
+            }
+
+            Label {
+                text: qsTr("\"%1\" has changes that haven't been saved.")
+                        .arg(keyboardConfiguratorController.customEffects.effectName(
+                                 keyboardConfiguratorController.selectedCustomEffectIndex))
+            }
+
+            Row {
+                anchors {
+                    right: parent.right
+                }
+
+                spacing: 10
+
+                EnhancedButton {
+                    text: qsTr("Save effect")
+                    flat: true
+                    highlighted: true
+
+                    onClicked: {
+                        keyboardConfiguratorController.saveSelectedCustomEffect()
+                        discardCustomEffectChangesPopup.finish()
+                    }
+                }
+
+                EnhancedButton {
+                    text: qsTr("Discard")
+                    flat: true
+                    highlighted: true
+                    Material.accent: Material.Red
+
+                    onClicked: discardCustomEffectChangesPopup.finish()
+                }
+
+                EnhancedButton {
+                    text: qsTr("Cancel")
+                    flat: true
+                    highlighted: true
+
+                    onClicked: {
+                        discardCustomEffectChangesPopup.pendingAction = null
+                        discardCustomEffectChangesPopup.close()
+                    }
+                }
+            }
+        }
+    }
+
+    Popup {
+        id: deleteCustomEffectPopup
+
+        anchors.centerIn: parent
+        margins: 10
+        modal: true
+
+        property int index: -1
+        property string name: ""
+
+        function show(row, effectName)
+        {
+            index = row
+            name = effectName
+            open()
+        }
+
+        Column {
+            anchors.fill: parent
+
+            spacing: 10
+
+            Label {
+                text: qsTr("Delete Effect")
+                font.bold: true
+                font.pixelSize: 15
+                bottomPadding: 10
+            }
+
+            Label {
+                text: qsTr("Delete \"%1\"? This cannot be undone.").arg(deleteCustomEffectPopup.name)
+            }
+
+            Row {
+                anchors {
+                    right: parent.right
+                }
+
+                spacing: 10
+
+                EnhancedButton {
+                    text: qsTr("Delete")
+                    flat: true
+                    highlighted: true
+                    Material.accent: Material.Red
+
+                    onClicked: {
+                        deleteCustomEffectPopup.close()
+                        keyboardConfiguratorController.deleteCustomEffect(deleteCustomEffectPopup.index)
+                    }
+                }
+
+                EnhancedButton {
+                    text: qsTr("Cancel")
+                    flat: true
+                    highlighted: true
+
+                    onClicked: deleteCustomEffectPopup.close()
+                }
+            }
+        }
+    }
+
+    Popup {
         id: editProfilesPopup
 
         anchors.centerIn: parent
@@ -744,7 +1006,8 @@ You can create an issue on GitHub, and I can guide you through the steps to accq
                 contentItem: Item {
                     Label {
                         text: model.name
-                        color: (keyboardConfiguratorController.selectedLightModeIndex === model.index)
+                        color: (keyboardConfiguratorController.selectedLightModeIndex === model.index &&
+                                keyboardConfiguratorController.selectedCustomEffectIndex === -1)
                                ? Material.accentColor : ((Material.theme == Material.Light) ? "#000000" : "#ffffff")
                         font.pixelSize: 14
                         anchors {
@@ -756,10 +1019,128 @@ You can create an issue on GitHub, and I can guide you through the steps to accq
                 }
 
                 onClicked: {
-                    if (keyboardConfiguratorController.selectedLightModeIndex !== model.index)
+                    if (keyboardConfiguratorController.selectedLightModeIndex !== model.index ||
+                            keyboardConfiguratorController.selectedCustomEffectIndex !== -1)
                     {
-                        keyboardConfiguratorController.unsavedChanges = true
-                        keyboardConfiguratorController.selectedLightModeIndex = model.index
+                        var modeIndex = model.index
+
+                        discardCustomEffectChangesPopup.confirm(function() {
+                            keyboardConfiguratorController.unsavedChanges = true
+                            keyboardConfiguratorController.selectedCustomEffectIndex = -1
+                            keyboardConfiguratorController.selectedLightModeIndex = modeIndex
+                        })
+                    }
+                }
+            }
+
+            footer: Column {
+                width: lightModeMenu.width
+
+                Label {
+                    text: qsTr("My Effects")
+                    font.bold: true
+                    font.pixelSize: 13
+                    opacity: 0.7
+                    leftPadding: 10
+                    topPadding: 15
+                    bottomPadding: 5
+                }
+
+                Label {
+                    visible: customEffectsRepeater.count === 0
+                    width: parent.width
+                    text: qsTr("Choose Custom, light up some keys, then click \"Save as new effect\".")
+                    wrapMode: Text.WordWrap
+                    font.pixelSize: 12
+                    opacity: 0.6
+                    leftPadding: 10
+                    rightPadding: 10
+                    bottomPadding: 10
+                }
+
+                Repeater {
+                    id: customEffectsRepeater
+
+                    model: keyboardConfiguratorController.customEffects
+
+                    delegate: EnhancedButton {
+                        id: customEffectOption
+
+                        topInset: 0
+                        bottomInset: 0
+                        background.implicitHeight: 50
+
+                        flat: true
+
+                        width: lightModeMenu.width
+
+                        readonly property bool selected:
+                            keyboardConfiguratorController.selectedCustomEffectIndex === model.index
+
+                        contentItem: Item {
+                            Label {
+                                text: model.name +
+                                      ((customEffectOption.selected && keyboardConfiguratorController.customEffectModified)
+                                       ? " *" : "")
+                                color: customEffectOption.selected
+                                       ? Material.accentColor : ((Material.theme == Material.Light) ? "#000000" : "#ffffff")
+                                font.pixelSize: 14
+                                elide: Text.ElideRight
+                                anchors {
+                                    left: parent.left
+                                    leftMargin: 10
+                                    right: customEffectMenuButton.left
+                                    verticalCenter: parent.verticalCenter
+                                }
+                            }
+
+                            RoundButton {
+                                id: customEffectMenuButton
+
+                                anchors {
+                                    right: parent.right
+                                    verticalCenter: parent.verticalCenter
+                                }
+
+                                flat: true
+                                icon.source: Icons.get(Icons.Edit)
+
+                                onClicked: customEffectMenu.open()
+
+                                Menu {
+                                    id: customEffectMenu
+
+                                    Action {
+                                        text: qsTr("Rename")
+                                        onTriggered: customEffectNamePopup.showRename(model.index, model.name)
+                                    }
+
+                                    Action {
+                                        text: qsTr("Duplicate")
+                                        onTriggered: keyboardConfiguratorController.duplicateCustomEffect(
+                                                         model.index, qsTr("%1 (copy)").arg(model.name))
+                                    }
+
+                                    Action {
+                                        text: qsTr("Delete")
+                                        icon.source: Icons.get(Icons.Delete)
+                                        onTriggered: deleteCustomEffectPopup.show(model.index, model.name)
+                                    }
+                                }
+                            }
+                        }
+
+                        onClicked: {
+                            if (!selected)
+                            {
+                                var effectIndex = model.index
+
+                                discardCustomEffectChangesPopup.confirm(function() {
+                                    keyboardConfiguratorController.unsavedChanges = true
+                                    keyboardConfiguratorController.selectedCustomEffectIndex = effectIndex
+                                })
+                            }
+                        }
                     }
                 }
             }
@@ -1136,6 +1517,42 @@ You can create an issue on GitHub, and I can guide you through the steps to accq
                                 text: qsTr("Unselect all")
 
                                 onClicked: keyboardConfiguratorController.unselectAllKeysForCustomMode()
+                            }
+                        }
+
+                        Row {
+                            anchors.horizontalCenter: parent.horizontalCenter
+
+                            spacing: 10
+
+                            visible: keyboardConfiguratorController.isCustomLightModeSelected
+
+                            EnhancedButton {
+                                text: qsTr("Save effect")
+
+                                visible: keyboardConfiguratorController.selectedCustomEffectIndex !== -1
+                                enabled: keyboardConfiguratorController.customEffectModified &&
+                                         ! keyboardConfiguratorController.savingChanges
+
+                                onClicked: keyboardConfiguratorController.saveSelectedCustomEffect()
+
+                                ToolTip.visible: hovered
+                                ToolTip.text: qsTr("Save changes to this effect and apply it to the keyboard")
+                                ToolTip.delay: mainWindowController.toolTipDelay
+                                ToolTip.timeout: mainWindowController.toolTipTimeout
+                            }
+
+                            EnhancedButton {
+                                text: qsTr("Save as new effect")
+
+                                enabled: ! keyboardConfiguratorController.savingChanges
+
+                                onClicked: customEffectNamePopup.showNew()
+
+                                ToolTip.visible: hovered
+                                ToolTip.text: qsTr("Save these keys as a new effect in My Effects")
+                                ToolTip.delay: mainWindowController.toolTipDelay
+                                ToolTip.timeout: mainWindowController.toolTipTimeout
                             }
                         }
 

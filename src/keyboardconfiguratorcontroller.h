@@ -22,6 +22,7 @@
 #include <QSortFilterProxyModel>
 
 #include "customlightmodekeys.h"
+#include "customeffectmodel.h"
 #include "modemodel.h"
 #include "key.h"
 #include "keyboard.h"
@@ -54,6 +55,10 @@ class KeyboardConfiguratorController : public QObject
     Q_PROPERTY(int selectedLightModeIndex READ selectedLightModeIndex WRITE setSelectedLightModeIndex NOTIFY selectedLightModeIndexChanged)
     Q_PROPERTY(bool isCustomLightModeSelected READ isCustomLightModeSelected NOTIFY isCustomLightModeSelectedChanged)
     Q_PROPERTY(bool showColoursColumn READ showColoursColumn NOTIFY showColoursColumnChanged)
+
+    Q_PROPERTY(CustomEffectModel* customEffects READ customEffects CONSTANT)
+    Q_PROPERTY(int selectedCustomEffectIndex READ selectedCustomEffectIndex WRITE setSelectedCustomEffectIndex NOTIFY selectedCustomEffectIndexChanged)
+    Q_PROPERTY(bool customEffectModified READ customEffectModified NOTIFY customEffectModifiedChanged)
 
     Q_PROPERTY(ProfileModel* profiles READ profiles CONSTANT)
     Q_PROPERTY(int selectedProfileIndex READ selectedProfileIndex WRITE setSelectedProfileIndex NOTIFY selectedProfileIndexChanged)
@@ -99,6 +104,10 @@ public:
     bool isCustomLightModeSelected();
     bool showColoursColumn();
 
+    CustomEffectModel* customEffects();
+    const int& selectedCustomEffectIndex();
+    const bool& customEffectModified();
+
     ProfileModel* profiles();
     const int& selectedProfileIndex();
 
@@ -129,6 +138,8 @@ signals:
     void selectedLightModeIndexChanged();
     void isCustomLightModeSelectedChanged();
     void showColoursColumnChanged();
+    void selectedCustomEffectIndexChanged();
+    void customEffectModifiedChanged();
     void selectedProfileIndexChanged();
     void openConfigureKeyMapPopup();
     void requestKbCanvasPaint();
@@ -153,6 +164,13 @@ public slots:
     void selectAllKeysForCustomMode();
     void unselectAllKeysForCustomMode();
 
+    void setSelectedCustomEffectIndex(const int& selectedCustomEffectIndex);
+    void saveAsNewCustomEffect(const QString& name);
+    void saveSelectedCustomEffect();
+    void setCustomEffectName(const int& row, const QString& name);
+    void duplicateCustomEffect(const int& row, const QString& name);
+    void deleteCustomEffect(const int& row);
+
     void createAndSelectNewProfile(const QString& name);
     void setProfileName(const int& row, const QString& name);
     void deleteProfile(const int& row);
@@ -173,6 +191,10 @@ private:
     KeyboardConfiguratorController::Mode m_selectedMode;
     int m_selectedLightModeIndex;
     QPointer<ModeModel> m_modes;
+
+    QPointer<CustomEffectModel> m_customEffects;
+    int m_selectedCustomEffectIndex;
+    bool m_customEffectModified;
 
     QPointer<ProfileModel> m_profiles;
     int m_selectedProfileIndex;
@@ -198,6 +220,11 @@ private:
 
     void loadProfileSettings();
     void loadProfileCustomColours();
+
+    void setCustomEffectModified(const bool& customEffectModified);
+    void markCustomLightModeKeysEdited();
+    QHash<int, QColor> customLightModeKeysByBufferIndex();
+    void loadCustomLightModeKeysByBufferIndex(const QHash<int, QColor>& keys);
 
     QString getProfileID();
 

@@ -28,7 +28,10 @@ KeyboardConfiguratorController::KeyboardConfiguratorController(QObject *parent)
       m_customLightModeKeys{new CustomLightModeKeys{this}},
       m_unsavedChanges{false}, m_savingChanges{false},
       m_selectedMode{Mode::Light}, m_selectedLightModeIndex{0},
-      m_modes{new ModeModel{this}}, m_selectedProfileIndex{-1},
+      m_modes{new ModeModel{this}},
+      m_customEffects{new CustomEffectModel{this}},
+      m_selectedCustomEffectIndex{-1}, m_customEffectModified{false},
+      m_selectedProfileIndex{-1},
       m_brightness{5}, m_animation{5}, m_sleep{5},
       m_keyCodes{new KeyCodeModel{this}},
       m_keyCodesProxy{new KeyCodeModelProxy{this}},
@@ -120,6 +123,21 @@ bool KeyboardConfiguratorController::showColoursColumn()
             : false;
 }
 
+CustomEffectModel *KeyboardConfiguratorController::customEffects()
+{
+    return m_customEffects.get();
+}
+
+const int &KeyboardConfiguratorController::selectedCustomEffectIndex()
+{
+    return m_selectedCustomEffectIndex;
+}
+
+const bool &KeyboardConfiguratorController::customEffectModified()
+{
+    return m_customEffectModified;
+}
+
 ProfileModel *KeyboardConfiguratorController::profiles()
 {
     return m_profiles.get();
@@ -206,6 +224,14 @@ void KeyboardConfiguratorController::load(const int &keyboardIndex)
     emit keyMapEnabledChanged();
 
     m_modes->setRGB(selectedKeyboard().rgb);
+
+    m_customEffects->load(QStringLiteral("%1:%2")
+                          .arg(QString::number(selectedKeyboard().id.vid),
+                               QString::number(selectedKeyboard().id.pid)));
+
+    m_selectedCustomEffectIndex = -1;
+    emit selectedCustomEffectIndexChanged();
+    setCustomEffectModified(false);
 }
 
 void KeyboardConfiguratorController::applyDefaultProfile()
@@ -335,6 +361,7 @@ void KeyboardConfiguratorController::clickKey(const int &x, const int &y)
             m_customLightModeKeys->toggle(index);
         }
 
+        markCustomLightModeKeysEdited();
         setUnsavedChanges(true);
         emit customLightModeKeysChanged();
     }
@@ -352,6 +379,7 @@ void KeyboardConfiguratorController::selectAllKeysForCustomMode()
         m_customLightModeKeys->addIfNotExists(i, m_selectedColour);
     }
 
+    markCustomLightModeKeysEdited();
     setUnsavedChanges(true);
     emit customLightModeKeysChanged();
 }
@@ -360,7 +388,120 @@ void KeyboardConfiguratorController::unselectAllKeysForCustomMode()
 {
     m_customLightModeKeys->clear();
 
+    markCustomLightModeKeysEdited();
     setUnsavedChanges(true);
+    emit customLightModeKeysChanged();
+}
+
+void KeyboardConfiguratorController::setSelectedCustomEffectIndex(const int &selectedCustomEffectIndex)
+{
+    if (m_selectedCustomEffectIndex == selectedCustomEffectIndex) return;
+
+    m_selectedCustomEffectIndex = selectedCustomEffectIndex;
+    emit selectedCustomEffectIndexChanged();
+
+    setCustomEffectModified(false);
+
+    if (m_selectedCustomEffectIndex == -1) return;
+
+    qInfo() << "Select custom effect" << m_customEffects->effectName(m_selectedCustomEffectIndex);
+
+    setSelectedLightModeIndex(m_modes->customModeIndex());
+    loadCustomLightModeKeysByBufferIndex(m_customEffects->effect(m_selectedCustomEffectIndex).keys);
+}
+
+void KeyboardConfiguratorController::saveAsNewCustomEffect(const QString &name)
+{
+    m_selectedCustomEffectIndex = m_customEffects->createEffect(name, customLightModeKeysByBufferIndex());
+    emit selectedCustomEffectIndexChanged();
+
+    setCustomEffectModified(false);
+
+    save();
+}
+
+void KeyboardConfiguratorController::saveSelectedCustomEffect()
+{
+    if (m_selectedCustomEffectIndex == -1) return;
+
+    m_customEffects->setEffectKeys(m_selectedCustomEffectIndex, customLightModeKeysByBufferIndex());
+
+    setCustomEffectModified(false);
+
+    save();
+}
+
+void KeyboardConfiguratorController::setCustomEffectName(const int &row, const QString &name)
+{
+    m_customEffects->setEffectName(row, name);
+}
+
+void KeyboardConfiguratorController::duplicateCustomEffect(const int &row, const QString &name)
+{
+    const QHash<int, QColor> keys = m_customEffects->effect(row).keys;
+    m_customEffects->createEffect(name, keys);
+}
+
+void KeyboardConfiguratorController::deleteCustomEffect(const int &row)
+{
+    m_customEffects->deleteEffect(row);
+
+    if (m_selectedCustomEffectIndex == row)
+    {
+        // Keep the keys on screen, they just no longer belong to a saved effect
+        m_selectedCustomEffectIndex = -1;
+        emit selectedCustomEffectIndexChanged();
+        setCustomEffectModified(false);
+    }
+    else if (m_selectedCustomEffectIndex > row)
+    {
+        m_selectedCustomEffectIndex--;
+        emit selectedCustomEffectIndexChanged();
+    }
+}
+
+void KeyboardConfiguratorController::setCustomEffectModified(const bool &customEffectModified)
+{
+    if (m_customEffectModified == customEffectModified) return;
+
+    m_customEffectModified = customEffectModified;
+    emit customEffectModifiedChanged();
+}
+
+void KeyboardConfiguratorController::markCustomLightModeKeysEdited()
+{
+    if (m_selectedCustomEffectIndex != -1)
+    {
+        setCustomEffectModified(true);
+    }
+}
+
+QHash<int, QColor> KeyboardConfiguratorController::customLightModeKeysByBufferIndex()
+{
+    QHash<int, QColor> keys;
+
+    for (auto&& keyIndex : m_customLightModeKeys->keyIndexes())
+    {
+        keys[selectedKeyboard().keys.at(keyIndex).bufferIndex] = m_customLightModeKeys->keys()[keyIndex];
+    }
+
+    return keys;
+}
+
+void KeyboardConfiguratorController::loadCustomLightModeKeysByBufferIndex(const QHash<int, QColor> &keys)
+{
+    m_customLightModeKeys->clear();
+
+    for (int i = 0; i < selectedKeyboard().keys.size(); i++)
+    {
+        const int bufferIndex = selectedKeyboard().keys.at(i).bufferIndex;
+
+        if (keys.contains(bufferIndex))
+        {
+            m_customLightModeKeys->add(i, keys.value(bufferIndex));
+        }
+    }
+
     emit customLightModeKeysChanged();
 }
 
@@ -506,6 +647,16 @@ void KeyboardConfiguratorController::saveProfile()
     settings.setValue(u"selected_light_mode_index"_s, m_selectedLightModeIndex);
     settings.setValue(u"random_colours"_s, m_randomColours);
     settings.setValue(u"selected_colour"_s, m_selectedColour);
+
+    if (m_selectedCustomEffectIndex == -1)
+    {
+        settings.remove(u"selected_custom_effect"_s);
+    }
+    else
+    {
+        settings.setValue(u"selected_custom_effect"_s,
+                          m_customEffects->effect(m_selectedCustomEffectIndex).id);
+    }
 
     settings.remove(u"custom_light_mode_keys"_s);
 
@@ -741,6 +892,19 @@ void KeyboardConfiguratorController::loadProfileSettings()
         }
     }
     settings.endGroup();
+
+    // A saved effect wins over the profile's own copy of the custom keys,
+    // so edits to the effect show up in every profile using it
+    const int effectIndex = m_customEffects->indexOf(settings.value(u"selected_custom_effect"_s).toString());
+
+    m_selectedCustomEffectIndex = isCustomLightModeSelected() ? effectIndex : -1;
+    emit selectedCustomEffectIndexChanged();
+    setCustomEffectModified(false);
+
+    if (m_selectedCustomEffectIndex != -1)
+    {
+        loadCustomLightModeKeysByBufferIndex(m_customEffects->effect(m_selectedCustomEffectIndex).keys);
+    }
 
     settings.endGroup();
 }
