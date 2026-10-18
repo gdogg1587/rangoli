@@ -19,6 +19,7 @@
 #include "mainwindowcontroller.h"
 #include "enhanceddialog.h"
 #include "hidconnection.h"
+#include "keyinput.h"
 
 using namespace Qt::Literals::StringLiterals;
 
@@ -35,8 +36,14 @@ KeyboardConfiguratorController::KeyboardConfiguratorController(QObject *parent)
       m_brightness{5}, m_animation{5}, m_sleep{5},
       m_keyCodes{new KeyCodeModel{this}},
       m_keyCodesProxy{new KeyCodeModelProxy{this}},
-      m_customMappedKeys{new CustomMappedKeys{this}}
+      m_customMappedKeys{new CustomMappedKeys{this}},
+      m_liveFrameInFlight{false}, m_liveFailures{0}, m_playing{false},
+      m_startPlaybackAfterSave{false}
 {
+    // Anything that changes the picked keys changes the preview
+    connect(this, &KeyboardConfiguratorController::customLightModeKeysChanged,
+            this, [this](){ preparePreview(); });
+
     m_keyCodesProxy->setSourceModel(m_keyCodes);
     m_keyCodesProxy->setSortRole(KeyCodeModel::KeyRoles::NameRole);
     m_keyCodesProxy->sort(0);
@@ -138,6 +145,137 @@ const bool &KeyboardConfiguratorController::customEffectModified()
     return m_customEffectModified;
 }
 
+bool KeyboardConfiguratorController::animationSupported()
+{
+    // Live lighting has only been worked out for single colour keyboards
+    return m_selectedKeyboardIndex != -1 && !selectedKeyboard().rgb;
+}
+
+bool KeyboardConfiguratorController::animEnabled()
+{
+    return m_anim.enabled;
+}
+
+int KeyboardConfiguratorController::animPattern()
+{
+    return m_anim.pattern;
+}
+
+int KeyboardConfiguratorController::animStep()
+{
+    return m_anim.stepMs;
+}
+
+int KeyboardConfiguratorController::animFade()
+{
+    return m_anim.fadeMs;
+}
+
+int KeyboardConfiguratorController::animBrightness()
+{
+    return m_anim.brightness;
+}
+
+int KeyboardConfiguratorController::animLoop()
+{
+    return m_anim.loop;
+}
+
+int KeyboardConfiguratorController::animPause()
+{
+    return m_anim.pauseMs;
+}
+
+const bool &KeyboardConfiguratorController::playing()
+{
+    return m_playing;
+}
+
+bool KeyboardConfiguratorController::editingSequence()
+{
+    return m_anim.enabled && m_anim.pattern == AnimationSettings::Sequence;
+}
+
+QString KeyboardConfiguratorController::sequenceText()
+{
+    QStringList steps;
+
+    for (auto&& step : m_sequence)
+    {
+        if (step.isEmpty())
+        {
+            steps << QString(QChar(0x2013));
+            continue;
+        }
+
+        QStringList names;
+        for (auto&& keyIndex : step)
+        {
+            names << KeyCode::Names.value(selectedKeyboard().keys.at(keyIndex).keyCode, u"?"_s);
+        }
+        steps << names.join(u'+');
+    }
+
+    return steps.join(u"  "_s);
+}
+
+int KeyboardConfiguratorController::sequenceLength()
+{
+    return m_sequence.size();
+}
+
+bool KeyboardConfiguratorController::defaultProfileAnimated(const Keyboard &keyboard)
+{
+    if (keyboard.rgb || !m_profiles || m_profiles->rowCount() == 0) return false;
+
+    const QString keyboardID = QStringLiteral("%1:%2").arg(QString::number(keyboard.id.vid),
+                                                            QString::number(keyboard.id.pid));
+    const QString profileID = m_profiles->data(m_profiles->index(m_profiles->defaultProfileIndex(), 0),
+                                               ProfileModel::ProfileModelRoles::IDRole).toString();
+
+    QSettings settings;
+    settings.beginGroup(QStringLiteral("profiles/%1/%2").arg(profileID, keyboardID));
+
+    if (settings.value(u"selected_light_mode_index"_s).toInt() != m_modes->customModeIndex())
+    {
+        return false;
+    }
+
+    const QString effectID = settings.value(u"selected_custom_effect"_s).toString();
+    bool animated = AnimationSettings::read(settings).enabled;
+    settings.endGroup();
+
+    settings.beginGroup(QStringLiteral("custom_effects/%1").arg(keyboardID));
+    if (!effectID.isEmpty() && settings.childGroups().contains(effectID))
+    {
+        settings.beginGroup(effectID);
+        animated = AnimationSettings::read(settings).enabled;
+        settings.endGroup();
+    }
+    settings.endGroup();
+
+    return animated;
+}
+
+void KeyboardConfiguratorController::stopPlaybackBlocking()
+{
+    m_startPlaybackAfterSave = false;
+
+    if (!m_playing) return;
+
+    qInfo() << "Stop live lighting before quitting";
+
+    m_liveTimer->stop();
+    m_playing = false;
+    emit playingChanged();
+
+    unsigned char** buffers = takeRestoreBuffers();
+    if (buffers)
+    {
+        HIDConnection::getInstance().sendDataBlocking(m_livePath, buffers, 1);
+    }
+}
+
 ProfileModel *KeyboardConfiguratorController::profiles()
 {
     return m_profiles.get();
@@ -188,6 +326,86 @@ Key KeyboardConfiguratorController::getKeyByCustomMappedKeysIndex(int index)
     return selectedKeyboard().keys.at(m_customMappedKeys->keyIndexes().at(index));
 }
 
+int KeyboardConfiguratorController::keyCount()
+{
+    if (m_selectedKeyboardIndex == -1) return 0;
+
+    return selectedKeyboard().keys.size();
+}
+
+Key KeyboardConfiguratorController::getKey(int index)
+{
+    return selectedKeyboard().keys.at(index);
+}
+
+int KeyboardConfiguratorController::previewLevel(int keyIndex)
+{
+    return m_previewLevels.value(keyIndex, 0);
+}
+
+QString KeyboardConfiguratorController::stepLabels(int keyIndex)
+{
+    QStringList labels;
+
+    for (int n = 0; n < m_sequence.size(); n++)
+    {
+        if (m_sequence.at(n).contains(keyIndex)) labels << QString::number(n + 1);
+    }
+
+    return labels.join(QChar(0x00B7));
+}
+
+QString KeyboardConfiguratorController::addSequenceText(const QString &text)
+{
+    QList<QList<int>> sequence = m_sequence;
+    QString unknown;
+
+    for (auto&& c : text)
+    {
+        const int keyIndex = keyIndexForCode(KeyInput::codeForCharacter(c));
+
+        if (keyIndex == -1)
+        {
+            if (!unknown.contains(c)) unknown += c;
+        }
+        else
+        {
+            sequence << QList<int>{keyIndex};
+        }
+    }
+
+    if (sequence.size() != m_sequence.size())
+    {
+        setSequence(sequence, true);
+    }
+
+    return unknown;
+}
+
+bool KeyboardConfiguratorController::recordKey(int nativeScanCode)
+{
+    const int keyIndex = keyIndexForCode(KeyInput::codeForNativeScanCode(nativeScanCode));
+
+    if (keyIndex == -1) return false;
+
+    QList<QList<int>> sequence = m_sequence;
+    sequence << QList<int>{keyIndex};
+    setSequence(sequence, true);
+
+    return true;
+}
+
+void KeyboardConfiguratorController::advancePreview()
+{
+    // Animations that play once are replayed after a second so the preview keeps going
+    if (m_previewAnimation.finished(m_previewClock.elapsed() - 1000))
+    {
+        m_previewClock.restart();
+    }
+
+    m_previewLevels = m_previewAnimation.render(m_previewClock.elapsed());
+}
+
 void KeyboardConfiguratorController::init()
 {
     auto mainWindowController = qvariant_cast<MainWindowController*>(qmlEngine(this)
@@ -201,10 +419,40 @@ void KeyboardConfiguratorController::init()
 
     connect(&connection, &HIDConnection::dataSentSuccessfully, this, [this](){
         setSavingChanges(false);
+
+        if (m_startPlaybackAfterSave)
+        {
+            m_startPlaybackAfterSave = false;
+            startPlayback();
+        }
+    });
+
+    m_liveTimer = new QTimer{this};
+    m_liveTimer->setInterval(40);
+    connect(m_liveTimer, &QTimer::timeout, this, &KeyboardConfiguratorController::sendLiveFrame);
+
+    connect(&connection, &HIDConnection::liveFrameSent, this, [this](const bool& ok){
+        m_liveFrameInFlight = false;
+
+        if (ok)
+        {
+            m_liveFailures = 0;
+        }
+        else if (m_playing && ++m_liveFailures >= 5)
+        {
+            qWarning() << "Live lighting keeps failing, stop playing";
+            stopPlayback(false);
+        }
     });
 
     connect(&connection, &HIDConnection::failedToSendData, this, [this](const QString& message){
         setSavingChanges(false);
+
+        if (m_startPlaybackAfterSave)
+        {
+            m_startPlaybackAfterSave = false;
+            startPlayback();
+        }
 
         MainWindowController::showEnhancedDialog(this, EnhancedDialog(
                 tr("Error"),
@@ -232,6 +480,8 @@ void KeyboardConfiguratorController::load(const int &keyboardIndex)
     m_selectedCustomEffectIndex = -1;
     emit selectedCustomEffectIndexChanged();
     setCustomEffectModified(false);
+
+    emit animationSupportedChanged();
 }
 
 void KeyboardConfiguratorController::applyDefaultProfile()
@@ -350,7 +600,13 @@ void KeyboardConfiguratorController::clickKey(const int &x, const int &y)
     int index = getKeyIndexAtLocation(x, y);
     if (index == -1) return;
 
-    if (m_selectedMode == Mode::Light)
+    if (m_selectedMode == Mode::Light && editingSequence())
+    {
+        QList<QList<int>> sequence = m_sequence;
+        sequence << QList<int>{index};
+        setSequence(sequence, true);
+    }
+    else if (m_selectedMode == Mode::Light)
     {
         if (selectedKeyboard().rgb)
         {
@@ -372,8 +628,43 @@ void KeyboardConfiguratorController::clickKey(const int &x, const int &y)
     }
 }
 
+void KeyboardConfiguratorController::clickKeySecondary(const int &x, const int &y)
+{
+    if (!(m_selectedMode == Mode::Light && editingSequence()))
+    {
+        clickKey(x, y);
+        return;
+    }
+
+    const int index = getKeyIndexAtLocation(x, y);
+    if (index == -1) return;
+
+    // Take the key out of the last step it is in
+    QList<QList<int>> sequence = m_sequence;
+
+    for (int n = sequence.size() - 1; n >= 0; n--)
+    {
+        if (sequence[n].removeOne(index))
+        {
+            if (sequence.at(n).isEmpty()) sequence.removeAt(n);
+
+            setSequence(sequence, true);
+            return;
+        }
+    }
+}
+
 void KeyboardConfiguratorController::selectAllKeysForCustomMode()
 {
+    if (editingSequence())
+    {
+        QList<QList<int>> sequence;
+        for (int i = 0; i < selectedKeyboard().keys.size(); i++) sequence << QList<int>{i};
+
+        setSequence(sequence, true);
+        return;
+    }
+
     for (int i = 0; i < selectedKeyboard().keys.size(); i++)
     {
         m_customLightModeKeys->addIfNotExists(i, m_selectedColour);
@@ -386,6 +677,12 @@ void KeyboardConfiguratorController::selectAllKeysForCustomMode()
 
 void KeyboardConfiguratorController::unselectAllKeysForCustomMode()
 {
+    if (editingSequence())
+    {
+        setSequence({}, true);
+        return;
+    }
+
     m_customLightModeKeys->clear();
 
     markCustomLightModeKeysEdited();
@@ -406,13 +703,20 @@ void KeyboardConfiguratorController::setSelectedCustomEffectIndex(const int &sel
 
     qInfo() << "Select custom effect" << m_customEffects->effectName(m_selectedCustomEffectIndex);
 
+    const CustomEffect& effect = m_customEffects->effect(m_selectedCustomEffectIndex);
+
     setSelectedLightModeIndex(m_modes->customModeIndex());
-    loadCustomLightModeKeysByBufferIndex(m_customEffects->effect(m_selectedCustomEffectIndex).keys);
+    setAnimSettings(effect.animation, false);
+    loadCustomLightModeKeysByBufferIndex(effect.keys, effect.order);
+    loadSequenceByBufferIndex(effect.sequence);
 }
 
 void KeyboardConfiguratorController::saveAsNewCustomEffect(const QString &name)
 {
-    m_selectedCustomEffectIndex = m_customEffects->createEffect(name, customLightModeKeysByBufferIndex());
+    CustomEffect effect = currentEffectContent();
+    effect.name = name;
+
+    m_selectedCustomEffectIndex = m_customEffects->createEffect(effect);
     emit selectedCustomEffectIndexChanged();
 
     setCustomEffectModified(false);
@@ -424,7 +728,7 @@ void KeyboardConfiguratorController::saveSelectedCustomEffect()
 {
     if (m_selectedCustomEffectIndex == -1) return;
 
-    m_customEffects->setEffectKeys(m_selectedCustomEffectIndex, customLightModeKeysByBufferIndex());
+    m_customEffects->setEffectContent(m_selectedCustomEffectIndex, currentEffectContent());
 
     setCustomEffectModified(false);
 
@@ -438,8 +742,10 @@ void KeyboardConfiguratorController::setCustomEffectName(const int &row, const Q
 
 void KeyboardConfiguratorController::duplicateCustomEffect(const int &row, const QString &name)
 {
-    const QHash<int, QColor> keys = m_customEffects->effect(row).keys;
-    m_customEffects->createEffect(name, keys);
+    // Copy first, creating an effect can move the one being copied
+    CustomEffect effect = m_customEffects->effect(row);
+    effect.name = name;
+    m_customEffects->createEffect(effect);
 }
 
 void KeyboardConfiguratorController::deleteCustomEffect(const int &row)
@@ -488,9 +794,37 @@ QHash<int, QColor> KeyboardConfiguratorController::customLightModeKeysByBufferIn
     return keys;
 }
 
-void KeyboardConfiguratorController::loadCustomLightModeKeysByBufferIndex(const QHash<int, QColor> &keys)
+QList<int> KeyboardConfiguratorController::customLightModeKeysOrder()
+{
+    QList<int> order;
+
+    for (auto&& keyIndex : m_customLightModeKeys->keyIndexes())
+    {
+        order << selectedKeyboard().keys.at(keyIndex).bufferIndex;
+    }
+
+    return order;
+}
+
+void KeyboardConfiguratorController::loadCustomLightModeKeysByBufferIndex(const QHash<int, QColor> &keys,
+                                                                          const QList<int> &order)
 {
     m_customLightModeKeys->clear();
+
+    QHash<int, int> keyIndexByBufferIndex;
+    for (int i = 0; i < selectedKeyboard().keys.size(); i++)
+    {
+        keyIndexByBufferIndex[selectedKeyboard().keys.at(i).bufferIndex] = i;
+    }
+
+    // Picked order first, then anything saved before the order was recorded
+    for (auto&& bufferIndex : order)
+    {
+        if (keys.contains(bufferIndex) && keyIndexByBufferIndex.contains(bufferIndex))
+        {
+            m_customLightModeKeys->addIfNotExists(keyIndexByBufferIndex.value(bufferIndex), keys.value(bufferIndex));
+        }
+    }
 
     for (int i = 0; i < selectedKeyboard().keys.size(); i++)
     {
@@ -498,11 +832,306 @@ void KeyboardConfiguratorController::loadCustomLightModeKeysByBufferIndex(const 
 
         if (keys.contains(bufferIndex))
         {
-            m_customLightModeKeys->add(i, keys.value(bufferIndex));
+            m_customLightModeKeys->addIfNotExists(i, keys.value(bufferIndex));
         }
     }
 
     emit customLightModeKeysChanged();
+}
+
+void KeyboardConfiguratorController::setAnimEnabled(const bool &enabled)
+{
+    AnimationSettings anim = m_anim;
+    anim.enabled = enabled;
+    setAnimSettings(anim, true);
+}
+
+void KeyboardConfiguratorController::setAnimPattern(const int &pattern)
+{
+    AnimationSettings anim = m_anim;
+    anim.pattern = pattern;
+    setAnimSettings(anim, true);
+}
+
+void KeyboardConfiguratorController::setAnimStep(const int &stepMs)
+{
+    AnimationSettings anim = m_anim;
+    anim.stepMs = stepMs;
+    setAnimSettings(anim, true);
+}
+
+void KeyboardConfiguratorController::setAnimFade(const int &fadeMs)
+{
+    AnimationSettings anim = m_anim;
+    anim.fadeMs = fadeMs;
+    setAnimSettings(anim, true);
+}
+
+void KeyboardConfiguratorController::setAnimBrightness(const int &brightness)
+{
+    AnimationSettings anim = m_anim;
+    anim.brightness = brightness;
+    setAnimSettings(anim, true);
+}
+
+void KeyboardConfiguratorController::setAnimLoop(const int &loop)
+{
+    AnimationSettings anim = m_anim;
+    anim.loop = loop;
+    setAnimSettings(anim, true);
+}
+
+void KeyboardConfiguratorController::setAnimPause(const int &pauseMs)
+{
+    AnimationSettings anim = m_anim;
+    anim.pauseMs = pauseMs;
+    setAnimSettings(anim, true);
+}
+
+void KeyboardConfiguratorController::stopPlayback()
+{
+    stopPlayback(true);
+}
+
+void KeyboardConfiguratorController::setAnimSettings(const AnimationSettings &anim, const bool &edited)
+{
+    m_anim = anim;
+    emit animSettingsChanged();
+
+    // Switching to a sequence starts from the keys already picked
+    if (editingSequence() && m_sequence.isEmpty() && !m_customLightModeKeys->keyIndexes().isEmpty())
+    {
+        for (auto&& keyIndex : m_customLightModeKeys->keyIndexes()) m_sequence << QList<int>{keyIndex};
+        emit sequenceChanged();
+    }
+
+    preparePreview();
+
+    if (edited)
+    {
+        markCustomLightModeKeysEdited();
+        setUnsavedChanges(true);
+    }
+}
+
+void KeyboardConfiguratorController::undoSequenceStep()
+{
+    if (m_sequence.isEmpty()) return;
+
+    QList<QList<int>> sequence = m_sequence;
+    sequence.removeLast();
+    setSequence(sequence, true);
+}
+
+void KeyboardConfiguratorController::addSequencePause()
+{
+    QList<QList<int>> sequence = m_sequence;
+    sequence << QList<int>{};
+    setSequence(sequence, true);
+}
+
+void KeyboardConfiguratorController::clearSequence()
+{
+    setSequence({}, true);
+}
+
+void KeyboardConfiguratorController::setSequence(const QList<QList<int>> &sequence, const bool &edited)
+{
+    m_sequence = sequence;
+
+    // The picked keys follow the sequence, they are what stays lit when playback stops
+    syncSelectionFromSequence();
+
+    emit sequenceChanged();
+
+    if (edited)
+    {
+        markCustomLightModeKeysEdited();
+        setUnsavedChanges(true);
+    }
+}
+
+void KeyboardConfiguratorController::syncSelectionFromSequence()
+{
+    m_customLightModeKeys->clear();
+
+    for (auto&& step : m_sequence)
+    {
+        for (auto&& keyIndex : step)
+        {
+            m_customLightModeKeys->addIfNotExists(keyIndex, QColor(Qt::white));
+        }
+    }
+
+    emit customLightModeKeysChanged();
+}
+
+QList<QList<int>> KeyboardConfiguratorController::sequenceByBufferIndex()
+{
+    QList<QList<int>> sequence;
+
+    for (auto&& step : m_sequence)
+    {
+        QList<int> bufferIndexes;
+        for (auto&& keyIndex : step) bufferIndexes << selectedKeyboard().keys.at(keyIndex).bufferIndex;
+        sequence << bufferIndexes;
+    }
+
+    return sequence;
+}
+
+void KeyboardConfiguratorController::loadSequenceByBufferIndex(const QList<QList<int>> &sequence)
+{
+    QHash<int, int> keyIndexByBufferIndex;
+    for (int i = 0; i < selectedKeyboard().keys.size(); i++)
+    {
+        keyIndexByBufferIndex[selectedKeyboard().keys.at(i).bufferIndex] = i;
+    }
+
+    m_sequence.clear();
+
+    for (auto&& step : sequence)
+    {
+        QList<int> keyIndexes;
+        for (auto&& bufferIndex : step)
+        {
+            if (keyIndexByBufferIndex.contains(bufferIndex)) keyIndexes << keyIndexByBufferIndex.value(bufferIndex);
+        }
+
+        // Keep pauses, drop steps whose keys this keyboard doesn't have
+        if (step.isEmpty() || !keyIndexes.isEmpty()) m_sequence << keyIndexes;
+    }
+
+    // Saved before sequences had steps: one step per picked key
+    if (m_sequence.isEmpty())
+    {
+        for (auto&& keyIndex : m_customLightModeKeys->keyIndexes()) m_sequence << QList<int>{keyIndex};
+    }
+
+    emit sequenceChanged();
+    preparePreview();
+}
+
+int KeyboardConfiguratorController::keyIndexForCode(const KeyCode::Code &code)
+{
+    if (code == KeyCode::Key_Invalid || m_selectedKeyboardIndex == -1) return -1;
+
+    for (int i = 0; i < selectedKeyboard().keys.size(); i++)
+    {
+        if (selectedKeyboard().keys.at(i).keyCode == code) return i;
+    }
+
+    return -1;
+}
+
+CustomEffect KeyboardConfiguratorController::currentEffectContent()
+{
+    CustomEffect effect;
+
+    effect.keys = customLightModeKeysByBufferIndex();
+    effect.order = customLightModeKeysOrder();
+    effect.sequence = sequenceByBufferIndex();
+    effect.animation = m_anim;
+
+    return effect;
+}
+
+void KeyboardConfiguratorController::preparePreview()
+{
+    if (m_selectedKeyboardIndex == -1) return;
+
+    m_previewAnimation.prepare(selectedKeyboard().keys, m_customLightModeKeys->keyIndexes(), m_sequence, m_anim);
+    m_previewClock.restart();
+}
+
+void KeyboardConfiguratorController::startPlayback()
+{
+    if (!m_liveTimer) return;
+
+    qInfo() << "Start live lighting on" << selectedKeyboard().id;
+
+    m_liveKeys = selectedKeyboard().keys;
+    m_livePath = selectedKeyboard().path;
+    m_liveAnimation.prepare(m_liveKeys, m_customLightModeKeys->keyIndexes(), m_sequence, m_anim);
+
+    m_liveFrameInFlight = false;
+    m_liveFailures = 0;
+    m_liveClock.restart();
+    m_liveTimer->start();
+
+    if (!m_playing)
+    {
+        m_playing = true;
+        emit playingChanged();
+    }
+}
+
+void KeyboardConfiguratorController::stopPlayback(const bool &restoreLighting)
+{
+    m_startPlaybackAfterSave = false;
+
+    if (!m_playing) return;
+
+    qInfo() << "Stop live lighting";
+
+    m_liveTimer->stop();
+    m_playing = false;
+    emit playingChanged();
+
+    emit HIDConnection::getInstance().closeLiveConnection();
+
+    if (restoreLighting)
+    {
+        unsigned char** buffers = takeRestoreBuffers();
+        if (buffers)
+        {
+            emit HIDConnection::getInstance().sendData(m_livePath, buffers, 1);
+        }
+    }
+}
+
+void KeyboardConfiguratorController::sendLiveFrame()
+{
+    // Wait for the keyboard to take the previous frame instead of queueing more
+    if (m_liveFrameInFlight) return;
+
+    const qint64 ms = m_liveClock.elapsed();
+
+    if (m_liveAnimation.finished(ms))
+    {
+        stopPlayback(true);
+        return;
+    }
+
+    const QList<int> levels = m_liveAnimation.render(ms);
+
+    // Live frames start with one byte before LED 0
+    QByteArray frame(LiveFramePacketCount * (BufferSize - 3), 0);
+
+    for (int i = 0; i < m_liveKeys.size(); i++)
+    {
+        const int position = m_liveKeys.at(i).bufferIndex + 1;
+
+        if (position < frame.size())
+        {
+            frame[position] = static_cast<char>(levels.at(i));
+        }
+    }
+
+    m_liveFrameInFlight = true;
+    emit HIDConnection::getInstance().sendLiveFrame(m_livePath, frame);
+}
+
+unsigned char **KeyboardConfiguratorController::takeRestoreBuffers()
+{
+    if (m_liveRestoreBuffer.size() != BufferSize) return nullptr;
+
+    // Re-sending the light mode makes the keyboard leave live lighting
+    unsigned char** buffers = new unsigned char* [1];
+    buffers[0] = new unsigned char[BufferSize];
+    std::memcpy(buffers[0], m_liveRestoreBuffer.constData(), BufferSize);
+
+    return buffers;
 }
 
 void KeyboardConfiguratorController::createAndSelectNewProfile(const QString &name)
@@ -671,6 +1300,16 @@ void KeyboardConfiguratorController::saveProfile()
 
     settings.endGroup();
 
+    QStringList customLightModeOrder;
+    for (auto&& bufferIndex : customLightModeKeysOrder())
+    {
+        customLightModeOrder << QString::number(bufferIndex);
+    }
+    settings.setValue(u"custom_light_mode_order"_s, customLightModeOrder);
+
+    settings.setValue(u"custom_sequence"_s, LightAnimation::sequenceToStrings(sequenceByBufferIndex()));
+    m_anim.write(settings);
+
     settings.remove(u"custom_mapped_keys"_s);
 
     settings.beginGroup(u"custom_mapped_keys"_s);
@@ -704,6 +1343,12 @@ void KeyboardConfiguratorController::saveToKeyboard()
     qInfo() << "Save to keyboard" << selectedKeyboard().id;
 
     setSavingChanges(true);
+
+    // Live frames mixed in with a save make the keyboard refuse reports
+    if (m_playing)
+    {
+        m_liveTimer->stop();
+    }
 
     unsigned char** buffers = new unsigned char* [1 + CustomLightModeBuffersSize + KeyMapBuffersSize];
     int buffersIndex = 0;
@@ -821,6 +1466,23 @@ void KeyboardConfiguratorController::saveToKeyboard()
 
     emit HIDConnection::getInstance().sendData(selectedKeyboard().path, buffers, buffersIndex);
 
+    // Kept so live lighting can hand the keyboard back to these settings
+    unsigned char lightBuffer[BufferSize];
+    setStandardLightBufferBetter(lightBuffer);
+    m_liveRestoreBuffer = QByteArray(reinterpret_cast<const char*>(lightBuffer), BufferSize);
+
+    // The keys just written double as the still version shown when playback stops.
+    // Playback (re)starts once the keyboard has taken the save.
+    if (isCustomLightModeSelected() && m_anim.enabled && animationSupported())
+    {
+        m_startPlaybackAfterSave = true;
+    }
+    else
+    {
+        m_startPlaybackAfterSave = false;
+        stopPlayback(false);
+    }
+
     setUnsavedChanges(false);
 }
 
@@ -843,24 +1505,24 @@ void KeyboardConfiguratorController::loadProfileSettings()
     setRandomColours(settings.value(u"random_colours"_s, true).toBool());
     setSelectedColour(settings.value(u"selected_colour"_s, QColor(Qt::white)).value<QColor>());
 
+    QHash<int, QColor> customLightModeKeys;
     settings.beginGroup(u"custom_light_mode_keys"_s);
-    m_customLightModeKeys->clear();
-    QStringList customLightModeKeysBufferIndexes = settings.childKeys();
-    for (auto&& bufferIndex : customLightModeKeysBufferIndexes)
+    for (auto&& bufferIndex : settings.childKeys())
     {
-        for(int i = 0; i < selectedKeyboard().keys.size(); i++)
-        {
-            const Key& key = selectedKeyboard().keys.at(i);
-
-            if (bufferIndex == QString::number(key.bufferIndex))
-            {
-                m_customLightModeKeys->add(i, settings.value(bufferIndex).value<QColor>());
-                break;
-            }
-        }
+        customLightModeKeys[bufferIndex.toInt()] = settings.value(bufferIndex).value<QColor>();
     }
-    emit customLightModeKeysChanged();
     settings.endGroup();
+
+    QList<int> customLightModeOrder;
+    for (auto&& bufferIndex : settings.value(u"custom_light_mode_order"_s).toStringList())
+    {
+        customLightModeOrder << bufferIndex.toInt();
+    }
+
+    setAnimSettings(AnimationSettings::read(settings), false);
+    loadCustomLightModeKeysByBufferIndex(customLightModeKeys, customLightModeOrder);
+    loadSequenceByBufferIndex(LightAnimation::sequenceFromStrings(
+                                  settings.value(u"custom_sequence"_s).toStringList()));
 
     settings.beginGroup(u"custom_mapped_keys"_s);
     m_customMappedKeys->clearAll();
@@ -903,7 +1565,11 @@ void KeyboardConfiguratorController::loadProfileSettings()
 
     if (m_selectedCustomEffectIndex != -1)
     {
-        loadCustomLightModeKeysByBufferIndex(m_customEffects->effect(m_selectedCustomEffectIndex).keys);
+        const CustomEffect& effect = m_customEffects->effect(m_selectedCustomEffectIndex);
+
+        setAnimSettings(effect.animation, false);
+        loadCustomLightModeKeysByBufferIndex(effect.keys, effect.order);
+        loadSequenceByBufferIndex(effect.sequence);
     }
 
     settings.endGroup();

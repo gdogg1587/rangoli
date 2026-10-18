@@ -44,6 +44,10 @@ QVariant CustomEffectModel::data(const QModelIndex &index, int role) const
     {
         return m_effects.at(index.row()).name;
     }
+    else if (role == AnimatedRole)
+    {
+        return m_effects.at(index.row()).animation.enabled;
+    }
 
     return QVariant();
 }
@@ -54,6 +58,7 @@ QHash<int, QByteArray> CustomEffectModel::roleNames() const
 
     roles[IDRole] = "id";
     roles[NameRole] = "name";
+    roles[AnimatedRole] = "animated";
 
     return roles;
 }
@@ -78,7 +83,7 @@ void CustomEffectModel::load(const QString &keyboardID)
 
         settings.beginGroup(id);
 
-        CustomEffect effect{id, settings.value(u"name"_s).toString(), {}};
+        CustomEffect effect{id, settings.value(u"name"_s).toString(), {}, {}, {}, {}};
 
         settings.beginGroup(u"keys"_s);
         for (auto&& bufferIndex : settings.childKeys())
@@ -86,6 +91,14 @@ void CustomEffectModel::load(const QString &keyboardID)
             effect.keys[bufferIndex.toInt()] = settings.value(bufferIndex).value<QColor>();
         }
         settings.endGroup();
+
+        for (auto&& bufferIndex : settings.value(u"order"_s).toStringList())
+        {
+            effect.order << bufferIndex.toInt();
+        }
+
+        effect.sequence = LightAnimation::sequenceFromStrings(settings.value(u"sequence"_s).toStringList());
+        effect.animation = AnimationSettings::read(settings);
 
         settings.endGroup();
 
@@ -97,11 +110,12 @@ void CustomEffectModel::load(const QString &keyboardID)
     endResetModel();
 }
 
-int CustomEffectModel::createEffect(const QString &name, const QHash<int, QColor> &keys)
+int CustomEffectModel::createEffect(const CustomEffect &newEffect)
 {
-    qInfo() << "Create custom effect" << name;
+    qInfo() << "Create custom effect" << newEffect.name;
 
-    CustomEffect effect{QUuid::createUuid().toString(), name, keys};
+    CustomEffect effect = newEffect;
+    effect.id = QUuid::createUuid().toString();
     writeEffect(effect);
 
     auto row = m_effects.size();
@@ -125,12 +139,17 @@ void CustomEffectModel::setEffectName(const int &row, const QString &name)
     emit dataChanged(index(row), index(row));
 }
 
-void CustomEffectModel::setEffectKeys(const int &row, const QHash<int, QColor> &keys)
+void CustomEffectModel::setEffectContent(const int &row, const CustomEffect &content)
 {
-    qInfo() << "Update keys of custom effect" << m_effects.at(row).name;
+    qInfo() << "Update custom effect" << m_effects.at(row).name;
 
-    m_effects[row].keys = keys;
+    m_effects[row].keys = content.keys;
+    m_effects[row].order = content.order;
+    m_effects[row].sequence = content.sequence;
+    m_effects[row].animation = content.animation;
     writeEffect(m_effects.at(row));
+
+    emit dataChanged(index(row), index(row));
 }
 
 void CustomEffectModel::deleteEffect(const int &row)
@@ -187,6 +206,16 @@ void CustomEffectModel::writeEffect(const CustomEffect &effect)
         settings.setValue(QString::number(it.key()), it.value());
     }
     settings.endGroup();
+
+    QStringList order;
+    for (auto&& bufferIndex : effect.order)
+    {
+        order << QString::number(bufferIndex);
+    }
+    settings.setValue(u"order"_s, order);
+
+    settings.setValue(u"sequence"_s, LightAnimation::sequenceToStrings(effect.sequence));
+    effect.animation.write(settings);
 
     settings.endGroup();
 }

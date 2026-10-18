@@ -18,6 +18,8 @@
 #include <QColor>
 #include <QHash>
 
+#include "lightanimation.h"
+
 struct CustomEffect
 {
     QString id;
@@ -25,6 +27,14 @@ struct CustomEffect
 
     // LED buffer index -> colour
     QHash<int, QColor> keys;
+
+    // LED buffer indexes in the order the user picked them
+    QList<int> order;
+
+    // Sequence pattern steps, as LED buffer indexes
+    QList<QList<int>> sequence;
+
+    AnimationSettings animation;
 };
 
 // User created custom light mode effects, saved per keyboard model
@@ -35,7 +45,8 @@ class CustomEffectModel : public QAbstractListModel
 public:
     enum CustomEffectModelRoles {
         IDRole = Qt::UserRole + 1,
-        NameRole
+        NameRole,
+        AnimatedRole
     };
 
     explicit CustomEffectModel(QObject *parent = nullptr);
@@ -48,9 +59,11 @@ public:
 
     void load(const QString& keyboardID);
 
-    int createEffect(const QString& name, const QHash<int, QColor>& keys);
+    // effect's id is ignored, a new one is made
+    int createEffect(const CustomEffect& effect);
     void setEffectName(const int& row, const QString& name);
-    void setEffectKeys(const int& row, const QHash<int, QColor>& keys);
+    // Replaces everything except the id and name
+    void setEffectContent(const int& row, const CustomEffect& content);
     void deleteEffect(const int& row);
 
     const CustomEffect& effect(const int& row) const;

@@ -25,7 +25,9 @@ set(SOURCE_LIST
     keyboardconfiguratorcontroller.h keyboardconfiguratorcontroller.cpp
     keyboardmodel.h keyboardmodel.cpp
     keyboardusbid.h keyboardusbid.cpp
+    lightanimation.h lightanimation.cpp
     keycode.h
+    keyinput.h keyinput.cpp
     keycodemodel.h keycodemodel.cpp
     keycodemodelproxy.h keycodemodelproxy.cpp
     main.cpp

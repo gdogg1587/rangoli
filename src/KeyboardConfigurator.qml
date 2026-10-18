@@ -1079,7 +1079,7 @@ You can create an issue on GitHub, and I can guide you through the steps to accq
 
                         contentItem: Item {
                             Label {
-                                text: model.name +
+                                text: (model.animated ? "\u25B6 " : "") + model.name +
                                       ((customEffectOption.selected && keyboardConfiguratorController.customEffectModified)
                                        ? " *" : "")
                                 color: customEffectOption.selected
@@ -1182,6 +1182,33 @@ You can create an issue on GitHub, and I can guide you through the steps to accq
                 right: parent.right
                 rightMargin: 20
                 verticalCenter: parent.verticalCenter
+            }
+
+            Label {
+                anchors.verticalCenter: parent.verticalCenter
+
+                visible: keyboardConfiguratorController.playing
+
+                text: qsTr("\u25B6 Animation playing on keyboard")
+                color: Material.accentColor
+                font.pixelSize: 14
+            }
+
+            EnhancedButton {
+                anchors.verticalCenter: parent.verticalCenter
+
+                visible: keyboardConfiguratorController.playing
+
+                text: qsTr("Stop")
+                flat: true
+                highlighted: true
+
+                onClicked: keyboardConfiguratorController.stopPlayback()
+
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("Stop the animation and go back to the keys saved on the keyboard")
+                ToolTip.delay: mainWindowController.toolTipDelay
+                ToolTip.timeout: mainWindowController.toolTipTimeout
             }
 
             RoundButton {
@@ -1300,7 +1327,7 @@ You can create an issue on GitHub, and I can guide you through the steps to accq
 
                 anchors {
                     top: selectedProfileComboBoxContainer.bottom
-                    topMargin: Math.max((svItem.height - kbCanvas.height - lightModeControlsRightColumn.implicitHeight) / 4, 0)
+                    topMargin: 20
                     leftMargin: Math.abs((svItem.width - (kbCanvas.width * kbCanvasScale.xScale)) / 2)
                     left: parent.left
                 }
@@ -1311,13 +1338,41 @@ You can create an issue on GitHub, and I can guide you through the steps to accq
                     enabled: keyboardConfiguratorController.isCustomLightModeSelected ||
                             (keyboardConfiguratorController.selectedMode === KeyboardConfiguratorController.KeyMap)
 
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
+
                     onClicked: (mouse) => {
                         var l = mapToItem(kbCanvas,
                                           mouse.x,
                                           mouse.y)
 
-                        keyboardConfiguratorController.clickKey(l.x, l.y)
+                        if (mouse.button === Qt.RightButton)
+                        {
+                            keyboardConfiguratorController.clickKeySecondary(l.x, l.y)
+                        }
+                        else
+                        {
+                            keyboardConfiguratorController.clickKey(l.x, l.y)
+                        }
                     }
+                }
+
+                Timer {
+                    id: animationPreviewTimer
+
+                    interval: 40
+                    repeat: true
+                    running: kbConfigurator.visible &&
+                             Qt.application.state === Qt.ApplicationActive &&
+                             keyboardConfiguratorController.animEnabled &&
+                             keyboardConfiguratorController.isCustomLightModeSelected &&
+                             keyboardConfiguratorController.selectedMode === KeyboardConfiguratorController.Light
+
+                    onTriggered: {
+                        keyboardConfiguratorController.advancePreview()
+                        parent.requestPaint()
+                    }
+
+                    onRunningChanged: parent.requestPaint()
                 }
 
                 Timer {
@@ -1410,14 +1465,35 @@ You can create an issue on GitHub, and I can guide you through the steps to accq
                         var acSize = keyboardConfiguratorController.customLightModeKeys.rowCount()
                         var key;
 
-                        for (i = 0; i < acSize; i++)
+                        if (keyboardConfiguratorController.animEnabled)
                         {
-                            key = keyboardConfiguratorController.getKeyByCustomLightModeKeysIndex(i)
-                            ctx.fillStyle = keyboardConfiguratorController.customLightModeKeys.getColour(i)
-                            ctx.fillRect(key.topX,
-                                         key.topY,
-                                         (key.bottomX - key.topX),
-                                         (key.bottomY - key.topY))
+                            var keyCount = keyboardConfiguratorController.keyCount()
+                            var level;
+
+                            for (i = 0; i < keyCount; i++)
+                            {
+                                level = keyboardConfiguratorController.previewLevel(i)
+                                if (level <= 0) continue
+
+                                key = keyboardConfiguratorController.getKey(i)
+                                ctx.fillStyle = Qt.rgba(0.24, 0.55, 1.0, level / 250)
+                                ctx.fillRect(key.topX,
+                                             key.topY,
+                                             (key.bottomX - key.topX),
+                                             (key.bottomY - key.topY))
+                            }
+                        }
+                        else
+                        {
+                            for (i = 0; i < acSize; i++)
+                            {
+                                key = keyboardConfiguratorController.getKeyByCustomLightModeKeysIndex(i)
+                                ctx.fillStyle = keyboardConfiguratorController.customLightModeKeys.getColour(i)
+                                ctx.fillRect(key.topX,
+                                             key.topY,
+                                             (key.bottomX - key.topX),
+                                             (key.bottomY - key.topY))
+                            }
                         }
                     }
                     else if(keyboardConfiguratorController.selectedMode === KeyboardConfiguratorController.KeyMap)
@@ -1441,6 +1517,13 @@ You can create an issue on GitHub, and I can guide you through the steps to accq
                     if (keyboardConfiguratorController.isCustomLightModeSelected &&
                             keyboardConfiguratorController.selectedMode === KeyboardConfiguratorController.Light)
                     {
+                        var showOrder = keyboardConfiguratorController.animEnabled &&
+                                keyboardConfiguratorController.animPattern === 0
+                        var showOrigin = keyboardConfiguratorController.animEnabled &&
+                                keyboardConfiguratorController.animPattern === 3
+
+                        ctx.font = "bold 11px sans-serif"
+
                         for (i = 0; i < acSize; i++)
                         {
                             key = keyboardConfiguratorController.getKeyByCustomLightModeKeysIndex(i)
@@ -1449,6 +1532,30 @@ You can create an issue on GitHub, and I can guide you through the steps to accq
                                            key.topY,
                                            (key.bottomX - key.topX),
                                            (key.bottomY - key.topY))
+
+                            if (showOrigin && i === 0)
+                            {
+                                ctx.fillStyle = "#fc9d03"
+                                ctx.fillText("\u25CE", key.topX + 3, key.topY + 12)
+                            }
+                        }
+
+                        if (showOrder)
+                        {
+                            var labelKeyCount = keyboardConfiguratorController.keyCount()
+                            var labels
+
+                            ctx.fillStyle = "#fc9d03"
+
+                            for (i = 0; i < labelKeyCount; i++)
+                            {
+                                labels = keyboardConfiguratorController.stepLabels(i)
+                                if (labels.length === 0) continue
+
+                                key = keyboardConfiguratorController.getKey(i)
+                                ctx.fillText(labels, key.topX + 3, key.topY + 12,
+                                             key.bottomX - key.topX - 4)
+                            }
                         }
                     }
                     else if(keyboardConfiguratorController.selectedMode === KeyboardConfiguratorController.KeyMap)
@@ -1472,7 +1579,8 @@ You can create an issue on GitHub, and I can guide you through the steps to accq
             Item {
                 id: lightModeControls
 
-                implicitHeight: lightModeControlsRightColumn.implicitHeight
+                implicitHeight: Math.max(lightModeControlsLeftColumn.implicitHeight,
+                                         lightModeControlsRightColumn.implicitHeight)
                 implicitWidth: lightModeControlsLeftColumn.implicitWidth + lightModeControlsRightColumn.implicitWidth
 
                 visible: keyboardConfiguratorController.selectedMode === KeyboardConfiguratorController.Light
@@ -1555,6 +1663,371 @@ You can create an issue on GitHub, and I can guide you through the steps to accq
                                 ToolTip.timeout: mainWindowController.toolTipTimeout
                             }
                         }
+
+                        CheckBox {
+                            anchors.horizontalCenter: parent.horizontalCenter
+
+                            text: qsTr("Animate")
+
+                            visible: keyboardConfiguratorController.isCustomLightModeSelected
+                            enabled: keyboardConfiguratorController.animationSupported
+
+                            checked: keyboardConfiguratorController.animEnabled
+
+                            onToggled: keyboardConfiguratorController.animEnabled = checked
+
+                            ToolTip.visible: hovered && !enabled
+                            ToolTip.text: qsTr("Animated effects are only supported on single colour keyboards for now")
+                            ToolTip.delay: mainWindowController.toolTipDelay
+                            ToolTip.timeout: mainWindowController.toolTipTimeout
+                        }
+
+                        Grid {
+                            id: animationControls
+
+                            anchors.horizontalCenter: parent.horizontalCenter
+
+                            visible: keyboardConfiguratorController.isCustomLightModeSelected &&
+                                     keyboardConfiguratorController.animEnabled
+
+                            columns: 3
+                            columnSpacing: 10
+
+                            verticalItemAlignment: Grid.AlignVCenter
+                            horizontalItemAlignment: Grid.AlignHCenter
+
+                            readonly property bool isBreathing: keyboardConfiguratorController.animPattern === 4
+
+                            function seconds(ms)
+                            {
+                                return qsTr("%1 s").arg((ms / 1000).toFixed(1))
+                            }
+
+                            Label {
+                                text: qsTr("Pattern")
+                            }
+
+                            ComboBox {
+                                width: 180
+
+                                model: [qsTr("Sequence"), qsTr("Wave left to right"), qsTr("Wave top to bottom"),
+                                    qsTr("Ripple"), qsTr("Breathing"), qsTr("Twinkle")]
+
+                                currentIndex: keyboardConfiguratorController.animPattern
+
+                                onActivated: (index) => keyboardConfiguratorController.animPattern = index
+                            }
+
+                            Item {
+                                width: 80
+                                height: 1
+                            }
+
+                            Label {
+                                text: qsTr("Speed")
+                                visible: ! animationControls.isBreathing
+                            }
+
+                            // Right is faster, so the slider runs from long steps to short ones
+                            Slider {
+                                width: 180
+                                from: 600
+                                to: 20
+                                stepSize: 10
+                                snapMode: Slider.SnapAlways
+
+                                visible: ! animationControls.isBreathing
+
+                                value: keyboardConfiguratorController.animStep
+
+                                onMoved: keyboardConfiguratorController.animStep = value
+                            }
+
+                            Label {
+                                width: 80
+                                elide: Text.ElideRight
+                                text: qsTr("%1 ms").arg(keyboardConfiguratorController.animStep)
+                                visible: ! animationControls.isBreathing
+                            }
+
+                            Label {
+                                text: animationControls.isBreathing ? qsTr("Breath") : qsTr("Fade")
+                            }
+
+                            Slider {
+                                width: 180
+                                from: 0
+                                to: 3000
+                                stepSize: 50
+                                snapMode: Slider.SnapAlways
+
+                                value: keyboardConfiguratorController.animFade
+
+                                onMoved: keyboardConfiguratorController.animFade = value
+                            }
+
+                            Label {
+                                width: 80
+                                elide: Text.ElideRight
+                                text: animationControls.seconds(keyboardConfiguratorController.animFade)
+                            }
+
+                            Label {
+                                text: qsTr("Brightness")
+                            }
+
+                            Slider {
+                                width: 180
+                                from: 1
+                                to: 10
+                                stepSize: 1
+                                snapMode: Slider.SnapAlways
+
+                                value: Math.round(keyboardConfiguratorController.animBrightness / 25)
+
+                                onMoved: keyboardConfiguratorController.animBrightness = value * 25
+                            }
+
+                            Label {
+                                width: 80
+                                elide: Text.ElideRight
+                                text: qsTr("%1 / 10").arg(Math.round(keyboardConfiguratorController.animBrightness / 25))
+                            }
+
+                            Label {
+                                text: qsTr("Loop")
+                            }
+
+                            ComboBox {
+                                width: 180
+
+                                model: [qsTr("Repeat"), qsTr("Back and forth"), qsTr("Play once")]
+
+                                currentIndex: keyboardConfiguratorController.animLoop
+
+                                onActivated: (index) => keyboardConfiguratorController.animLoop = index
+                            }
+
+                            Item {
+                                width: 80
+                                height: 1
+                            }
+
+                            Label {
+                                text: qsTr("Pause")
+                            }
+
+                            Slider {
+                                width: 180
+                                from: 0
+                                to: 3000
+                                stepSize: 100
+                                snapMode: Slider.SnapAlways
+
+                                value: keyboardConfiguratorController.animPause
+
+                                onMoved: keyboardConfiguratorController.animPause = value
+                            }
+
+                            Label {
+                                width: 80
+                                elide: Text.ElideRight
+                                text: animationControls.seconds(keyboardConfiguratorController.animPause)
+                            }
+                        }
+
+                        Label {
+                            anchors.horizontalCenter: parent.horizontalCenter
+
+                            width: animationControls.width
+                            visible: animationControls.visible
+
+                            wrapMode: Text.WordWrap
+                            horizontalAlignment: Text.AlignHCenter
+                            font.pixelSize: 12
+                            opacity: 0.7
+
+                            text: [
+                                qsTr("Click keys in the order they should light up; a key can be used more than once. Right-click a key to remove its last step."),
+                                qsTr("Sweeps across the whole keyboard, or only across the keys you pick (pick 2 or more)."),
+                                qsTr("Sweeps down the whole keyboard, or only across the keys you pick (pick 2 or more)."),
+                                qsTr("Spreads out from the first key you pick, or the middle of the keyboard. Pick more keys to limit it to those."),
+                                qsTr("Fades the whole keyboard, or the keys you pick (2 or more), in and out."),
+                                qsTr("Keys light up at random. Speed sets how often.")
+                            ][keyboardConfiguratorController.animPattern] ?? ""
+                        }
+
+                        Column {
+                            id: sequenceEditor
+
+                            anchors.horizontalCenter: parent.horizontalCenter
+
+                            visible: keyboardConfiguratorController.isCustomLightModeSelected &&
+                                     keyboardConfiguratorController.editingSequence
+
+                            spacing: 8
+
+                            property bool recording: false
+
+                            onVisibleChanged: if (!visible) recording = false
+
+                            // Takes the focus while recording so presses on the real keyboard become steps
+                            Item {
+                                id: sequenceRecorder
+
+                                width: 0
+                                height: 0
+
+                                focus: sequenceEditor.recording
+
+                                Keys.onPressed: (event) => {
+                                    event.accepted = true
+                                    if (!event.isAutoRepeat)
+                                    {
+                                        sequenceRecordWarning.visible =
+                                                !keyboardConfiguratorController.recordKey(event.nativeScanCode)
+                                    }
+                                }
+
+                                onActiveFocusChanged: if (!activeFocus) sequenceEditor.recording = false
+                            }
+
+                            Label {
+                                anchors.horizontalCenter: parent.horizontalCenter
+
+                                width: animationControls.width
+                                wrapMode: Text.WordWrap
+                                horizontalAlignment: Text.AlignHCenter
+
+                                text: keyboardConfiguratorController.sequenceLength === 0
+                                      ? qsTr("No steps yet")
+                                      : qsTr("%1 steps:  %2").arg(keyboardConfiguratorController.sequenceLength)
+                                                             .arg(keyboardConfiguratorController.sequenceText)
+                            }
+
+                            Row {
+                                anchors.horizontalCenter: parent.horizontalCenter
+
+                                spacing: 10
+
+                                TextField {
+                                    id: sequenceTextField
+
+                                    width: 200
+                                    placeholderText: qsTr("Type keys, e.g. asdffdsa")
+
+                                    enabled: !sequenceEditor.recording
+
+                                    function add()
+                                    {
+                                        if (text.length === 0) return
+
+                                        var unknown = keyboardConfiguratorController.addSequenceText(text)
+
+                                        sequenceTextWarning.text = unknown.length === 0 ? ""
+                                                : qsTr("Not on this keyboard: %1").arg(unknown)
+                                        text = ""
+                                    }
+
+                                    onAccepted: add()
+                                }
+
+                                EnhancedButton {
+                                    anchors.verticalCenter: parent.verticalCenter
+
+                                    text: qsTr("Add")
+                                    enabled: sequenceTextField.text.length > 0 && !sequenceEditor.recording
+
+                                    onClicked: sequenceTextField.add()
+                                }
+                            }
+
+                            Label {
+                                id: sequenceTextWarning
+
+                                anchors.horizontalCenter: parent.horizontalCenter
+
+                                visible: text.length > 0
+                                color: Material.color(Material.Red)
+                                font.pixelSize: 12
+                            }
+
+                            Row {
+                                anchors.horizontalCenter: parent.horizontalCenter
+
+                                spacing: 10
+
+                                EnhancedButton {
+                                    text: sequenceEditor.recording ? qsTr("Done") : qsTr("Record")
+                                    highlighted: sequenceEditor.recording
+
+                                    onClicked: {
+                                        sequenceEditor.recording = !sequenceEditor.recording
+                                        sequenceRecordWarning.visible = false
+
+                                        if (sequenceEditor.recording)
+                                        {
+                                            sequenceRecorder.forceActiveFocus()
+                                        }
+                                    }
+
+                                    ToolTip.visible: hovered
+                                    ToolTip.text: qsTr("Press keys on your keyboard to add them as steps")
+                                    ToolTip.delay: mainWindowController.toolTipDelay
+                                    ToolTip.timeout: mainWindowController.toolTipTimeout
+                                }
+
+                                EnhancedButton {
+                                    text: qsTr("Add pause")
+
+                                    // Usable while recording without ending it
+                                    focusPolicy: Qt.NoFocus
+
+                                    onClicked: keyboardConfiguratorController.addSequencePause()
+
+                                    ToolTip.visible: hovered
+                                    ToolTip.text: qsTr("Add a step with nothing lit. It lasts as long as one step; add more for a longer pause.")
+                                    ToolTip.delay: mainWindowController.toolTipDelay
+                                    ToolTip.timeout: mainWindowController.toolTipTimeout
+                                }
+
+                                EnhancedButton {
+                                    text: qsTr("Undo step")
+                                    enabled: keyboardConfiguratorController.sequenceLength > 0
+
+                                    onClicked: keyboardConfiguratorController.undoSequenceStep()
+                                }
+
+                                EnhancedButton {
+                                    text: qsTr("Clear")
+                                    enabled: keyboardConfiguratorController.sequenceLength > 0
+
+                                    onClicked: keyboardConfiguratorController.clearSequence()
+                                }
+                            }
+
+                            Label {
+                                anchors.horizontalCenter: parent.horizontalCenter
+
+                                visible: sequenceEditor.recording
+
+                                text: qsTr("Recording, press keys on your keyboard. Click Done when finished.")
+                                color: Material.accentColor
+                            }
+
+                            Label {
+                                id: sequenceRecordWarning
+
+                                anchors.horizontalCenter: parent.horizontalCenter
+
+                                visible: false
+
+                                text: qsTr("That key isn't on this keyboard (Fn can't be recorded)")
+                                color: Material.color(Material.Red)
+                                font.pixelSize: 12
+                            }
+                        }
+
 
                         Grid {
 

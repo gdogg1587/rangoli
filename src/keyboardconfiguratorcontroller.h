@@ -20,9 +20,12 @@
 #include <QSettings>
 #include <QColor>
 #include <QSortFilterProxyModel>
+#include <QTimer>
+#include <QElapsedTimer>
 
 #include "customlightmodekeys.h"
 #include "customeffectmodel.h"
+#include "lightanimation.h"
 #include "modemodel.h"
 #include "key.h"
 #include "keyboard.h"
@@ -60,6 +63,20 @@ class KeyboardConfiguratorController : public QObject
     Q_PROPERTY(int selectedCustomEffectIndex READ selectedCustomEffectIndex WRITE setSelectedCustomEffectIndex NOTIFY selectedCustomEffectIndexChanged)
     Q_PROPERTY(bool customEffectModified READ customEffectModified NOTIFY customEffectModifiedChanged)
 
+    Q_PROPERTY(bool animationSupported READ animationSupported NOTIFY animationSupportedChanged)
+    Q_PROPERTY(bool animEnabled READ animEnabled WRITE setAnimEnabled NOTIFY animSettingsChanged)
+    Q_PROPERTY(int animPattern READ animPattern WRITE setAnimPattern NOTIFY animSettingsChanged)
+    Q_PROPERTY(int animStep READ animStep WRITE setAnimStep NOTIFY animSettingsChanged)
+    Q_PROPERTY(int animFade READ animFade WRITE setAnimFade NOTIFY animSettingsChanged)
+    Q_PROPERTY(int animBrightness READ animBrightness WRITE setAnimBrightness NOTIFY animSettingsChanged)
+    Q_PROPERTY(int animLoop READ animLoop WRITE setAnimLoop NOTIFY animSettingsChanged)
+    Q_PROPERTY(int animPause READ animPause WRITE setAnimPause NOTIFY animSettingsChanged)
+    Q_PROPERTY(bool playing READ playing NOTIFY playingChanged)
+
+    Q_PROPERTY(bool editingSequence READ editingSequence NOTIFY animSettingsChanged)
+    Q_PROPERTY(QString sequenceText READ sequenceText NOTIFY sequenceChanged)
+    Q_PROPERTY(int sequenceLength READ sequenceLength NOTIFY sequenceChanged)
+
     Q_PROPERTY(ProfileModel* profiles READ profiles CONSTANT)
     Q_PROPERTY(int selectedProfileIndex READ selectedProfileIndex WRITE setSelectedProfileIndex NOTIFY selectedProfileIndexChanged)
 
@@ -84,6 +101,7 @@ public:
     explicit KeyboardConfiguratorController(QObject *parent = nullptr);    
 
     static constexpr int BufferSize = 65;
+    static constexpr int LiveFramePacketCount = 3;
 
     const bool& randomColours();
     const QColor& selectedColour();
@@ -108,6 +126,27 @@ public:
     const int& selectedCustomEffectIndex();
     const bool& customEffectModified();
 
+    bool animationSupported();
+    bool animEnabled();
+    int animPattern();
+    int animStep();
+    int animFade();
+    int animBrightness();
+    int animLoop();
+    int animPause();
+    const bool& playing();
+
+    bool editingSequence();
+    QString sequenceText();
+    int sequenceLength();
+
+    // Whether the default profile plays an animation on this keyboard
+    bool defaultProfileAnimated(const Keyboard& keyboard);
+
+    // Stops live lighting and hands the keyboard back to its saved lighting,
+    // waiting until that is sent. Safe to call when nothing is playing.
+    void stopPlaybackBlocking();
+
     ProfileModel* profiles();
     const int& selectedProfileIndex();
 
@@ -121,6 +160,18 @@ public:
 
     Q_INVOKABLE Key getKeyByCustomLightModeKeysIndex(int index);
     Q_INVOKABLE Key getKeyByCustomMappedKeysIndex(int index);
+
+    Q_INVOKABLE int keyCount();
+    Q_INVOKABLE Key getKey(int index);
+    Q_INVOKABLE int previewLevel(int keyIndex);
+    Q_INVOKABLE void advancePreview();
+
+    // Step numbers a key lights up at in the sequence, e.g. "1·8"
+    Q_INVOKABLE QString stepLabels(int keyIndex);
+    // Adds a step per typed character, returns the characters with no key
+    Q_INVOKABLE QString addSequenceText(const QString& text);
+    // Adds a step for a physical key press, false if the key is unknown
+    Q_INVOKABLE bool recordKey(int nativeScanCode);
 
 signals:
     void loadName(const QString& name);
@@ -140,6 +191,10 @@ signals:
     void showColoursColumnChanged();
     void selectedCustomEffectIndexChanged();
     void customEffectModifiedChanged();
+    void animationSupportedChanged();
+    void animSettingsChanged();
+    void playingChanged();
+    void sequenceChanged();
     void selectedProfileIndexChanged();
     void openConfigureKeyMapPopup();
     void requestKbCanvasPaint();
@@ -161,6 +216,7 @@ public slots:
     void setSelectedLightModeIndex(const int& selectedLightModeIndex);
     void setSelectedProfileIndex(const int& selectedProfileIndex);
     void clickKey(const int& x, const int& y);
+    void clickKeySecondary(const int& x, const int& y);
     void selectAllKeysForCustomMode();
     void unselectAllKeysForCustomMode();
 
@@ -170,6 +226,20 @@ public slots:
     void setCustomEffectName(const int& row, const QString& name);
     void duplicateCustomEffect(const int& row, const QString& name);
     void deleteCustomEffect(const int& row);
+
+    void setAnimEnabled(const bool& enabled);
+    void setAnimPattern(const int& pattern);
+    void setAnimStep(const int& stepMs);
+    void setAnimFade(const int& fadeMs);
+    void setAnimBrightness(const int& brightness);
+    void setAnimLoop(const int& loop);
+    void setAnimPause(const int& pauseMs);
+
+    void stopPlayback();
+
+    void undoSequenceStep();
+    void addSequencePause();
+    void clearSequence();
 
     void createAndSelectNewProfile(const QString& name);
     void setProfileName(const int& row, const QString& name);
@@ -224,7 +294,39 @@ private:
     void setCustomEffectModified(const bool& customEffectModified);
     void markCustomLightModeKeysEdited();
     QHash<int, QColor> customLightModeKeysByBufferIndex();
-    void loadCustomLightModeKeysByBufferIndex(const QHash<int, QColor>& keys);
+    QList<int> customLightModeKeysOrder();
+    void loadCustomLightModeKeysByBufferIndex(const QHash<int, QColor>& keys, const QList<int>& order);
+
+    AnimationSettings m_anim;
+    QList<QList<int>> m_sequence;
+    LightAnimation m_previewAnimation;
+    QElapsedTimer m_previewClock;
+    QList<int> m_previewLevels;
+
+    LightAnimation m_liveAnimation;
+    QPointer<QTimer> m_liveTimer;
+    QElapsedTimer m_liveClock;
+    QList<Key> m_liveKeys;
+    QString m_livePath;
+    QByteArray m_liveRestoreBuffer;
+    bool m_liveFrameInFlight;
+    int m_liveFailures;
+    bool m_playing;
+    bool m_startPlaybackAfterSave;
+
+    void setAnimSettings(const AnimationSettings& anim, const bool& edited);
+
+    void setSequence(const QList<QList<int>>& sequence, const bool& edited);
+    void syncSelectionFromSequence();
+    QList<QList<int>> sequenceByBufferIndex();
+    void loadSequenceByBufferIndex(const QList<QList<int>>& sequence);
+    int keyIndexForCode(const KeyCode::Code& code);
+    CustomEffect currentEffectContent();
+    void preparePreview();
+    void startPlayback();
+    void stopPlayback(const bool& restoreLighting);
+    void sendLiveFrame();
+    unsigned char** takeRestoreBuffers();
 
     QString getProfileID();
 
