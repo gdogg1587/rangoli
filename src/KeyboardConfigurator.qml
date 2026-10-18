@@ -1228,36 +1228,64 @@ You can create an issue on GitHub, and I can guide you through the steps to accq
                 ToolTip.timeout: mainWindowController.toolTipTimeout
             }
 
-            RoundButton {
+            // Applying only saves the profile, so point out edits that would stay out of My Effects
+            Label {
+                anchors.verticalCenter: parent.verticalCenter
+
+                visible: keyboardConfiguratorController.customEffectModified &&
+                         keyboardConfiguratorController.selectedCustomEffectIndex !== -1
+
+                text: qsTr("Effect not saved")
+                color: Material.color(Material.Orange)
+                font.pixelSize: 13
+
+                MouseArea {
+                    id: effectNotSavedHover
+
+                    anchors.fill: parent
+                    hoverEnabled: true
+                }
+
+                ToolTip.visible: effectNotSavedHover.containsMouse
+                ToolTip.text: qsTr("Your changes to this effect aren't in My Effects yet. Use Save effect or Save as new effect to keep them; Apply to keyboard only updates this profile.")
+                ToolTip.delay: mainWindowController.toolTipDelay
+                ToolTip.timeout: mainWindowController.toolTipTimeout
+            }
+
+            EnhancedButton {
                 id: resetButton
 
+                anchors.verticalCenter: parent.verticalCenter
+
+                text: qsTr("Undo changes")
                 flat: true
-                icon.source: Icons.get(Icons.Reset)
 
                 onClicked: keyboardConfiguratorController.reset()
 
                 enabled: keyboardConfiguratorController.unsavedChanges
 
                 ToolTip.visible: hovered
-                ToolTip.text: qsTr("Discard unsaved settings")
+                ToolTip.text: qsTr("Throw away changes you haven't applied and go back to the profile as last applied")
                 ToolTip.delay: mainWindowController.toolTipDelay
                 ToolTip.timeout: mainWindowController.toolTipTimeout
             }
 
-            RoundButton {
+            EnhancedButton {
                 id: saveButton
+
+                anchors.verticalCenter: parent.verticalCenter
+
+                text: qsTr("Apply to keyboard")
 
                 flat: ! keyboardConfiguratorController.unsavedChanges
 
                 highlighted: keyboardConfiguratorController.unsavedChanges
                 enabled: ! keyboardConfiguratorController.savingChanges
 
-                icon.source: Icons.get(Icons.Save)
-
                 onClicked: keyboardConfiguratorController.save()
 
                 ToolTip.visible: hovered
-                ToolTip.text: qsTr("Save and apply changes to keyboard")
+                ToolTip.text: qsTr("Save these settings to the current profile and send them to the keyboard")
                 ToolTip.delay: mainWindowController.toolTipDelay
                 ToolTip.timeout: mainWindowController.toolTipTimeout
             }

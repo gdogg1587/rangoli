@@ -22,8 +22,10 @@ import Rangoli
 ApplicationWindow {
     visible: true
 
-    width: 900
-    height: 700
+    // Wide enough for the larger keyboard pictures (about 1000 px) next to the
+    // lighting menu, without growing past smaller screens
+    width: Math.min(1240, Screen.desktopAvailableWidth - 40)
+    height: Math.min(860, Screen.desktopAvailableHeight - 60)
 
     minimumWidth: 500
     minimumHeight: 300
