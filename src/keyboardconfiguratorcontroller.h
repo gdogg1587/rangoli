@@ -70,6 +70,7 @@ class KeyboardConfiguratorController : public QObject
     Q_PROPERTY(int animFade READ animFade WRITE setAnimFade NOTIFY animSettingsChanged)
     Q_PROPERTY(int animFadeIn READ animFadeIn WRITE setAnimFadeIn NOTIFY animSettingsChanged)
     Q_PROPERTY(bool animReverse READ animReverse WRITE setAnimReverse NOTIFY animSettingsChanged)
+    Q_PROPERTY(bool animShuffle READ animShuffle WRITE setAnimShuffle NOTIFY animSettingsChanged)
     Q_PROPERTY(int animTrail READ animTrail WRITE setAnimTrail NOTIFY animSettingsChanged)
     Q_PROPERTY(int animCurve READ animCurve WRITE setAnimCurve NOTIFY animSettingsChanged)
     Q_PROPERTY(int animEffectiveFade READ animEffectiveFade NOTIFY animSettingsChanged)
@@ -140,6 +141,7 @@ public:
     int animFade();
     int animFadeIn();
     bool animReverse();
+    bool animShuffle();
     int animTrail();
     int animCurve();
     int animEffectiveFade();
@@ -250,6 +252,7 @@ public slots:
     void setAnimFade(const int& fadeMs);
     void setAnimFadeIn(const int& fadeInMs);
     void setAnimReverse(const bool& reverse);
+    void setAnimShuffle(const bool& shuffle);
     void setAnimTrail(const int& trailKeys);
     void setAnimCurve(const int& fadeCurve);
     void setAnimBrightness(const int& brightness);

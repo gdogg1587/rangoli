@@ -1718,6 +1718,8 @@ You can create an issue on GitHub, and I can guide you through the steps to accq
                             horizontalItemAlignment: Grid.AlignHCenter
 
                             readonly property bool isBreathing: keyboardConfiguratorController.animPattern === 4
+                            readonly property bool shuffleOn: keyboardConfiguratorController.animShuffle &&
+                                                              keyboardConfiguratorController.animPattern === 0
                             readonly property bool trailOn: keyboardConfiguratorController.animTrail > 0 &&
                                                             keyboardConfiguratorController.animHasDirection
 
@@ -1746,7 +1748,8 @@ You can create an issue on GitHub, and I can guide you through the steps to accq
                                 width: 80
 
                                 text: qsTr("Reverse")
-                                enabled: keyboardConfiguratorController.animPattern <= 3
+                                enabled: keyboardConfiguratorController.animPattern <= 3 &&
+                                         ! animationControls.shuffleOn
 
                                 checked: keyboardConfiguratorController.animReverse
 
@@ -1931,9 +1934,21 @@ You can create an issue on GitHub, and I can guide you through the steps to accq
                                 onActivated: (index) => keyboardConfiguratorController.animLoop = index
                             }
 
-                            Item {
+                            // Only sequences have an order to shuffle
+                            CheckBox {
                                 width: 80
-                                height: 1
+
+                                text: qsTr("Shuffle")
+                                enabled: keyboardConfiguratorController.animPattern === 0
+
+                                checked: keyboardConfiguratorController.animShuffle
+
+                                onToggled: keyboardConfiguratorController.animShuffle = checked
+
+                                ToolTip.visible: hovered
+                                ToolTip.text: qsTr("Play the sequence's steps in a new random order every loop. Pauses stay where they are.")
+                                ToolTip.delay: mainWindowController.toolTipDelay
+                                ToolTip.timeout: mainWindowController.toolTipTimeout
                             }
 
                             Label {

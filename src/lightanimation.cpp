@@ -34,6 +34,7 @@ void AnimationSettings::write(QSettings &settings) const
     settings.setValue(u"fade_ms"_s, fadeMs);
     settings.setValue(u"fade_in_ms"_s, fadeInMs);
     settings.setValue(u"reverse"_s, reverse);
+    settings.setValue(u"shuffle"_s, shuffle);
     settings.setValue(u"trail_keys"_s, trailKeys);
     settings.setValue(u"fade_curve"_s, fadeCurve);
     settings.setValue(u"brightness"_s, brightness);
@@ -53,6 +54,7 @@ AnimationSettings AnimationSettings::read(QSettings &settings)
     a.fadeMs = settings.value(u"fade_ms"_s, a.fadeMs).toInt();
     a.fadeInMs = settings.value(u"fade_in_ms"_s, a.fadeInMs).toInt();
     a.reverse = settings.value(u"reverse"_s, a.reverse).toBool();
+    a.shuffle = settings.value(u"shuffle"_s, a.shuffle).toBool();
     a.trailKeys = settings.value(u"trail_keys"_s, a.trailKeys).toInt();
     a.fadeCurve = settings.value(u"fade_curve"_s, a.fadeCurve).toInt();
     a.brightness = settings.value(u"brightness"_s, a.brightness).toInt();
@@ -81,7 +83,10 @@ void LightAnimation::prepare(const QList<Key> &keys, const QList<int> &selectedK
     m_settings = settings;
     m_participants.clear();
     m_offsets.clear();
+    m_steps.clear();
+    m_keySteps.clear();
     m_span = 0;
+    m_seed = QRandomGenerator::global()->generate();
 
     if (m_keys.isEmpty()) return;
 
@@ -89,11 +94,14 @@ void LightAnimation::prepare(const QList<Key> &keys, const QList<int> &selectedK
     {
         for (int n = 0; n < sequence.size(); n++)
         {
+            if (!sequence.at(n).isEmpty()) m_keySteps << n;
+
             for (auto&& i : sequence.at(n))
             {
                 if (i < 0 || i >= m_keys.size()) continue;
 
                 m_participants << i;
+                m_steps << n;
                 m_offsets << double(n) * m_settings.stepMs;
             }
         }
@@ -216,10 +224,15 @@ QList<int> LightAnimation::render(qint64 ms) const
     else
     {
         const bool reverse = m_settings.loop == AnimationSettings::BackAndForth && (n % 2 == 1);
+        const bool shuffle = m_settings.shuffle && m_settings.pattern == AnimationSettings::Sequence;
+
+        // Where every step plays in this loop
+        const QList<int> order = shuffle ? shuffledSteps(n) : QList<int>{};
 
         for (int k = 0; k < m_participants.size(); k++)
         {
-            const double offset = reverse ? m_span - m_offsets.at(k) : m_offsets.at(k);
+            double offset = shuffle ? double(order.at(m_steps.at(k))) * m_settings.stepMs : m_offsets.at(k);
+            if (reverse) offset = m_span - offset;
             const int i = m_participants.at(k);
 
             // Overlapping flashes of the same key show as the brighter one
@@ -268,6 +281,26 @@ QList<QList<int>> LightAnimation::sequenceFromStrings(const QStringList &strings
     }
 
     return sequence;
+}
+
+QList<int> LightAnimation::shuffledSteps(qint64 cycle) const
+{
+    // Steps keep their place by default; pauses never move, so the rhythm of
+    // the sequence stays the same and only which keys light up changes
+    QList<int> order(m_steps.isEmpty() ? 0 : m_steps.last() + 1);
+    for (int n = 0; n < order.size(); n++) order[n] = n;
+
+    QList<int> places = m_keySteps;
+    QRandomGenerator rng(m_seed + quint32(cycle));
+
+    for (qsizetype n = places.size() - 1; n > 0; n--)
+    {
+        places.swapItemsAt(n, rng.bounded(int(n) + 1));
+    }
+
+    for (int j = 0; j < m_keySteps.size(); j++) order[m_keySteps.at(j)] = places.at(j);
+
+    return order;
 }
 
 bool LightAnimation::finished(qint64 ms) const

@@ -181,6 +181,11 @@ bool KeyboardConfiguratorController::animReverse()
     return m_anim.reverse;
 }
 
+bool KeyboardConfiguratorController::animShuffle()
+{
+    return m_anim.shuffle;
+}
+
 int KeyboardConfiguratorController::animTrail()
 {
     return m_anim.trailKeys;
@@ -939,6 +944,13 @@ void KeyboardConfiguratorController::setAnimReverse(const bool &reverse)
 {
     AnimationSettings anim = m_anim;
     anim.reverse = reverse;
+    setAnimSettings(anim, true);
+}
+
+void KeyboardConfiguratorController::setAnimShuffle(const bool &shuffle)
+{
+    AnimationSettings anim = m_anim;
+    anim.shuffle = shuffle;
     setAnimSettings(anim, true);
 }
 

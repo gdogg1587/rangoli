@@ -53,6 +53,9 @@ struct AnimationSettings
     int pauseMs{0};
     bool reverse{false};
 
+    // Play a sequence's steps in a new random order every loop
+    bool shuffle{false};
+
     // Keys of trail behind a moving light; 0 uses fadeMs instead
     int trailKeys{0};
     int fadeCurve{Linear};
@@ -99,6 +102,15 @@ private:
     QList<int> m_participants;
     QList<double> m_offsets;
     double m_span{0};
+
+    // Sequence step of every participant, the steps that aren't pauses, and
+    // a seed so each loop of a shuffled sequence gets its own order
+    QList<int> m_steps;
+    QList<int> m_keySteps;
+    quint32 m_seed{0};
+
+    // Position every sequence step plays at in the given loop
+    QList<int> shuffledSteps(qint64 cycle) const;
 
     qint64 cycleLength() const;
     int envelope(double age) const;
