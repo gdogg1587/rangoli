@@ -25,6 +25,18 @@
 **If you enjoy using Rangoli, please consider [donating](https://github.com/rnayabed/rangoli#donate)**
 </div>
 
+> [!NOTE]
+> **This is a fork of Rangoli for the single-colour Royal Kludge RK96 (`258a:00a4`).**
+> It fixes custom lighting on single-colour keyboards, and adds saved effects,
+> animated lighting, a better tray menu and on-keyboard macros. It has only been
+> tested on the single-colour RK96 on Linux. See [docs/rk96](docs/rk96/README.md) for
+> every change and its test status, and the
+> [releases](https://github.com/gdogg1587/rangoli/releases) for a ready-to-run Linux
+> build. These changes have been offered to the original project in
+> [pull request #280](https://github.com/rnayabed/rangoli/pull/280).
+>
+> The rest of this README is the original project's.
+
 ## Purpose
 
 [Royal Kludge Keyboards](https://rkgamingstore.com/) are very popular in the budget mechanical keyboard community. Sometimes it is the only viable option for students especially from developing countries like me. However, they are infamous for poor software support.
