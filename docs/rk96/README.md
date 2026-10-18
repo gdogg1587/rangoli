@@ -51,6 +51,7 @@ line of commits. Each one builds and works on its own:
 | `b70c541` | Add a background layer to animated effects |
 | `8cd2543` | Add keyboard macros |
 | `ce6dc74` | Limit macros to keyboards whose macro format is confirmed |
+| `8ad829d` | Allow only one copy of Rangoli at a time |
 
 The full commit messages explain each change in more detail.
 
@@ -76,6 +77,16 @@ The full commit messages explain each change in more detail.
   times, and a failed save no longer leaks the device handle and buffers.
 - Fix `CustomLightModeKeys::add()`, which called `beginResetModel()` without a
   matching `endResetModel()`.
+- **Only one copy of Rangoli runs at a time** (`8ad829d`). Several copies streaming
+  live lighting and saves to the same keyboard flooded it with reports until it
+  stopped responding. This happened during testing, with an installed copy and two
+  AppImage copies running at once. The keyboard recovered after it was unplugged
+  and charged.
+  - A second copy started at login exits quietly. Any other second copy brings the
+    running copy's window forward.
+  - The lock is per user, so it covers installed copies, AppImages and builds that
+    use a different settings folder.
+  - A second copy also no longer wipes the running copy's `~/rangoli.log`.
 
 ### 2. Saved custom effects, "My Effects" (`0f18c8c`)
 

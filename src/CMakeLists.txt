@@ -39,6 +39,7 @@ set(SOURCE_LIST
     profile.h profile.cpp
     profilemodel.h profilemodel.cpp
     settingscontroller.h settingscontroller.cpp
+    singleinstance.h singleinstance.cpp
     startatboot.h startatboot.cpp
     systemtray.h systemtray.cpp
 
@@ -97,7 +98,7 @@ endif()
 target_compile_options(rangoli PRIVATE -Wall -Wextra -Werror)
 
 target_link_libraries(rangoli
-    PRIVATE Qt6::Quick Qt6::Svg Qt6::Widgets
+    PRIVATE Qt6::Quick Qt6::Svg Qt6::Widgets Qt6::Network
     PRIVATE hidapi::hidapi)
 
 install(TARGETS rangoli
