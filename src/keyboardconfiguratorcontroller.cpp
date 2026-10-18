@@ -613,6 +613,9 @@ void KeyboardConfiguratorController::setSelectedProfileIndex(const int &selected
     m_selectedProfileIndex = selectedProfileIndex;
     emit selectedProfileIndexChanged();
 
+    QSettings settings;
+    settings.setValue(u"last_profile"_s, getProfileID());
+
     loadProfileCustomColours();
     loadProfileSettings();
 
