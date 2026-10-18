@@ -2247,6 +2247,189 @@ You can create an issue on GitHub, and I can guide you through the steps to accq
                             }
                         }
 
+                        CheckBox {
+                            id: backgroundCheckBox
+
+                            anchors.horizontalCenter: parent.horizontalCenter
+
+                            visible: animationControls.visible
+
+                            text: qsTr("Background layer")
+
+                            checked: keyboardConfiguratorController.animBackground.enabled
+
+                            onToggled: keyboardConfiguratorController.setAnimBackground("enabled", checked)
+
+                            ToolTip.visible: hovered
+                            ToolTip.text: qsTr("Play a second pattern across the whole keyboard underneath this one. Where both light a key, the brighter one shows.")
+                            ToolTip.delay: mainWindowController.toolTipDelay
+                            ToolTip.timeout: mainWindowController.toolTipTimeout
+                        }
+
+                        // The same controls as the main layer, minus the ones that only make sense for it
+                        Grid {
+                            id: backgroundControls
+
+                            anchors.horizontalCenter: parent.horizontalCenter
+
+                            visible: animationControls.visible && background.enabled
+
+                            columns: 3
+                            columnSpacing: 10
+
+                            verticalItemAlignment: Grid.AlignVCenter
+                            horizontalItemAlignment: Grid.AlignHCenter
+
+                            readonly property var background: keyboardConfiguratorController.animBackground
+                            readonly property bool isBreathing: background.pattern === 4
+
+                            function set(name, value)
+                            {
+                                keyboardConfiguratorController.setAnimBackground(name, value)
+                            }
+
+                            Label {
+                                text: qsTr("Pattern")
+                            }
+
+                            // Every pattern but Sequence, so the index is one less than the pattern
+                            ComboBox {
+                                width: 180
+
+                                model: [qsTr("Wave left to right"), qsTr("Wave top to bottom"),
+                                    qsTr("Ripple"), qsTr("Breathing"), qsTr("Twinkle")]
+
+                                currentIndex: backgroundControls.background.pattern - 1
+
+                                onActivated: (index) => backgroundControls.set("pattern", index + 1)
+                            }
+
+                            CheckBox {
+                                width: 80
+
+                                text: qsTr("Reverse")
+                                enabled: backgroundControls.background.pattern <= 3
+
+                                checked: backgroundControls.background.reverse
+
+                                onToggled: backgroundControls.set("reverse", checked)
+                            }
+
+                            Label {
+                                text: qsTr("Speed")
+                                visible: ! backgroundControls.isBreathing
+                            }
+
+                            Slider {
+                                width: 180
+                                from: 600
+                                to: 20
+                                stepSize: 10
+                                snapMode: Slider.SnapAlways
+
+                                visible: ! backgroundControls.isBreathing
+
+                                value: backgroundControls.background.step
+
+                                onMoved: backgroundControls.set("step", value)
+                            }
+
+                            Label {
+                                width: 80
+                                elide: Text.ElideRight
+                                text: qsTr("%1 ms").arg(backgroundControls.background.step)
+                                visible: ! backgroundControls.isBreathing
+                            }
+
+                            Label {
+                                text: backgroundControls.isBreathing ? qsTr("Breathe") : qsTr("Fade out")
+                            }
+
+                            Slider {
+                                width: 180
+                                from: 0
+                                to: 3000
+                                stepSize: 50
+                                snapMode: Slider.SnapAlways
+
+                                value: backgroundControls.background.fade
+
+                                onMoved: backgroundControls.set("fade", value)
+                            }
+
+                            Label {
+                                width: 80
+                                elide: Text.ElideRight
+                                text: animationControls.seconds(backgroundControls.background.fade)
+                            }
+
+                            Label {
+                                text: qsTr("Fade shape")
+                                enabled: ! backgroundControls.isBreathing
+                            }
+
+                            ComboBox {
+                                width: 180
+
+                                enabled: ! backgroundControls.isBreathing
+
+                                model: [qsTr("Linear"), qsTr("Smooth"), qsTr("Comet")]
+
+                                currentIndex: backgroundControls.background.curve
+
+                                onActivated: (index) => backgroundControls.set("curve", index)
+                            }
+
+                            Item {
+                                width: 80
+                                height: 1
+                            }
+
+                            Label {
+                                text: qsTr("Brightness")
+                            }
+
+                            Slider {
+                                width: 180
+                                from: 1
+                                to: 10
+                                stepSize: 1
+                                snapMode: Slider.SnapAlways
+
+                                value: Math.round(backgroundControls.background.brightness / 25)
+
+                                onMoved: backgroundControls.set("brightness", value * 25)
+                            }
+
+                            Label {
+                                width: 80
+                                elide: Text.ElideRight
+                                text: qsTr("%1 / 10").arg(Math.round(backgroundControls.background.brightness / 25))
+                            }
+
+                            Label {
+                                text: qsTr("Pause")
+                            }
+
+                            Slider {
+                                width: 180
+                                from: 0
+                                to: 3000
+                                stepSize: 100
+                                snapMode: Slider.SnapAlways
+
+                                value: backgroundControls.background.pause
+
+                                onMoved: backgroundControls.set("pause", value)
+                            }
+
+                            Label {
+                                width: 80
+                                elide: Text.ElideRight
+                                text: animationControls.seconds(backgroundControls.background.pause)
+                            }
+                        }
+
 
                         Grid {
 

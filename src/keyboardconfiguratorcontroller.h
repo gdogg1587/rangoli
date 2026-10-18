@@ -78,6 +78,7 @@ class KeyboardConfiguratorController : public QObject
     Q_PROPERTY(int animBrightness READ animBrightness WRITE setAnimBrightness NOTIFY animSettingsChanged)
     Q_PROPERTY(int animLoop READ animLoop WRITE setAnimLoop NOTIFY animSettingsChanged)
     Q_PROPERTY(int animPause READ animPause WRITE setAnimPause NOTIFY animSettingsChanged)
+    Q_PROPERTY(QVariantMap animBackground READ animBackground NOTIFY animSettingsChanged)
     Q_PROPERTY(bool playing READ playing NOTIFY playingChanged)
     Q_PROPERTY(bool canResumePlayback READ canResumePlayback NOTIFY playingChanged)
 
@@ -149,6 +150,7 @@ public:
     int animBrightness();
     int animLoop();
     int animPause();
+    QVariantMap animBackground();
     const bool& playing();
     bool canResumePlayback();
 
@@ -260,6 +262,9 @@ public slots:
     void setAnimBrightness(const int& brightness);
     void setAnimLoop(const int& loop);
     void setAnimPause(const int& pauseMs);
+
+    // name is one of the keys of animBackground
+    void setAnimBackground(const QString& name, const QVariant& value);
 
     void stopPlayback();
     // Plays the last applied animation again after it was stopped

@@ -40,6 +40,18 @@ void AnimationSettings::write(QSettings &settings) const
     settings.setValue(u"brightness"_s, brightness);
     settings.setValue(u"loop"_s, loop);
     settings.setValue(u"pause_ms"_s, pauseMs);
+
+    settings.beginGroup(u"background"_s);
+    settings.setValue(u"enabled"_s, background.enabled);
+    settings.setValue(u"pattern"_s, background.pattern);
+    settings.setValue(u"step_ms"_s, background.stepMs);
+    settings.setValue(u"fade_ms"_s, background.fadeMs);
+    settings.setValue(u"fade_curve"_s, background.fadeCurve);
+    settings.setValue(u"brightness"_s, background.brightness);
+    settings.setValue(u"pause_ms"_s, background.pauseMs);
+    settings.setValue(u"reverse"_s, background.reverse);
+    settings.endGroup();
+
     settings.endGroup();
 }
 
@@ -60,6 +72,19 @@ AnimationSettings AnimationSettings::read(QSettings &settings)
     a.brightness = settings.value(u"brightness"_s, a.brightness).toInt();
     a.loop = settings.value(u"loop"_s, a.loop).toInt();
     a.pauseMs = settings.value(u"pause_ms"_s, a.pauseMs).toInt();
+
+    Background& b = a.background;
+    settings.beginGroup(u"background"_s);
+    b.enabled = settings.value(u"enabled"_s, b.enabled).toBool();
+    b.pattern = settings.value(u"pattern"_s, b.pattern).toInt();
+    b.stepMs = settings.value(u"step_ms"_s, b.stepMs).toInt();
+    b.fadeMs = settings.value(u"fade_ms"_s, b.fadeMs).toInt();
+    b.fadeCurve = settings.value(u"fade_curve"_s, b.fadeCurve).toInt();
+    b.brightness = settings.value(u"brightness"_s, b.brightness).toInt();
+    b.pauseMs = settings.value(u"pause_ms"_s, b.pauseMs).toInt();
+    b.reverse = settings.value(u"reverse"_s, b.reverse).toBool();
+    settings.endGroup();
+
     settings.endGroup();
 
     return a;
@@ -69,6 +94,21 @@ bool AnimationSettings::hasDirection() const
 {
     return pattern == Sequence || pattern == WaveLeftRight
             || pattern == WaveTopBottom || pattern == Ripple;
+}
+
+AnimationSettings AnimationSettings::backgroundSettings() const
+{
+    AnimationSettings a;
+    a.enabled = background.enabled;
+    a.pattern = background.pattern;
+    a.stepMs = background.stepMs;
+    a.fadeMs = background.fadeMs;
+    a.fadeCurve = background.fadeCurve;
+    a.brightness = background.brightness;
+    a.pauseMs = background.pauseMs;
+    a.reverse = background.reverse;
+    a.loop = Repeat;
+    return a;
 }
 
 int AnimationSettings::effectiveFadeMs() const
@@ -87,8 +127,17 @@ void LightAnimation::prepare(const QList<Key> &keys, const QList<int> &selectedK
     m_keySteps.clear();
     m_span = 0;
     m_seed = QRandomGenerator::global()->generate();
+    m_background.reset();
 
     if (m_keys.isEmpty()) return;
+
+    // A sequence makes no sense without its own steps, so the background
+    // never is one; it always covers the whole keyboard
+    if (m_settings.background.enabled && m_settings.background.pattern != AnimationSettings::Sequence)
+    {
+        m_background = std::make_shared<LightAnimation>();
+        m_background->prepare(m_keys, {}, {}, m_settings.backgroundSettings());
+    }
 
     if (m_settings.pattern == AnimationSettings::Sequence)
     {
@@ -186,9 +235,9 @@ void LightAnimation::prepare(const QList<Key> &keys, const QList<int> &selectedK
 
 QList<int> LightAnimation::render(qint64 ms) const
 {
-    QList<int> levels(m_keys.size(), 0);
+    QList<int> levels = m_background ? m_background->render(ms) : QList<int>(m_keys.size(), 0);
 
-    if (m_participants.isEmpty() || finished(ms)) return levels;
+    if (m_participants.isEmpty() || mainFinished(ms)) return levels;
 
     const qint64 cycle = cycleLength();
     const qint64 n = ms / cycle;
@@ -210,7 +259,7 @@ QList<int> LightAnimation::render(qint64 ms) const
             level = m_settings.brightness * (0.5 + 0.5 * qCos(M_PI * (t - in) / out));
         }
 
-        for (auto&& i : m_participants) levels[i] = qRound(level);
+        for (auto&& i : m_participants) levels[i] = qMax(levels.at(i), qRound(level));
     }
     else if (m_settings.pattern == AnimationSettings::Twinkle)
     {
@@ -304,6 +353,11 @@ QList<int> LightAnimation::shuffledSteps(qint64 cycle) const
 }
 
 bool LightAnimation::finished(qint64 ms) const
+{
+    return !m_background && mainFinished(ms);
+}
+
+bool LightAnimation::mainFinished(qint64 ms) const
 {
     return m_settings.loop == AnimationSettings::Once && ms >= cycleLength();
 }

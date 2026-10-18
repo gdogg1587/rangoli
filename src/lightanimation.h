@@ -17,6 +17,7 @@
 #include <QList>
 #include <QSettings>
 #include <QStringList>
+#include <memory>
 
 #include "key.h"
 
@@ -60,6 +61,25 @@ struct AnimationSettings
     int trailKeys{0};
     int fadeCurve{Linear};
 
+    // A second, always repeating pattern across the whole keyboard that plays
+    // under the main one; where both light a key the brighter wins
+    struct Background
+    {
+        bool enabled{false};
+        int pattern{Breathing};
+        int stepMs{120};
+        int fadeMs{1500};
+        int fadeCurve{Smooth};
+        int brightness{75};
+        int pauseMs{0};
+        bool reverse{false};
+    };
+
+    Background background;
+
+    // The background layer as settings of its own
+    AnimationSettings backgroundSettings() const;
+
     // Whether the pattern moves, so a trail in keys makes sense
     bool hasDirection() const;
 
@@ -86,7 +106,8 @@ public:
     // Level for every key (indexed like keys) at the given time
     QList<int> render(qint64 ms) const;
 
-    // True once a Loop::Once animation has played through
+    // True once a Loop::Once animation has played through. A background
+    // layer keeps going after that, so it is never finished.
     bool finished(qint64 ms) const;
 
     // Sequences are saved as one string per step, keys joined by '+'.
@@ -111,6 +132,10 @@ private:
 
     // Position every sequence step plays at in the given loop
     QList<int> shuffledSteps(qint64 cycle) const;
+
+    std::shared_ptr<LightAnimation> m_background;
+
+    bool mainFinished(qint64 ms) const;
 
     qint64 cycleLength() const;
     int envelope(double age) const;

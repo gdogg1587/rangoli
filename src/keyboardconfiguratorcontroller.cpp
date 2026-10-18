@@ -221,6 +221,22 @@ int KeyboardConfiguratorController::animPause()
     return m_anim.pauseMs;
 }
 
+QVariantMap KeyboardConfiguratorController::animBackground()
+{
+    const AnimationSettings::Background& b = m_anim.background;
+
+    return {
+        {u"enabled"_s, b.enabled},
+        {u"pattern"_s, b.pattern},
+        {u"step"_s, b.stepMs},
+        {u"fade"_s, b.fadeMs},
+        {u"curve"_s, b.fadeCurve},
+        {u"brightness"_s, b.brightness},
+        {u"pause"_s, b.pauseMs},
+        {u"reverse"_s, b.reverse}
+    };
+}
+
 const bool &KeyboardConfiguratorController::playing()
 {
     return m_playing;
@@ -996,6 +1012,24 @@ void KeyboardConfiguratorController::setAnimPause(const int &pauseMs)
 {
     AnimationSettings anim = m_anim;
     anim.pauseMs = pauseMs;
+    setAnimSettings(anim, true);
+}
+
+void KeyboardConfiguratorController::setAnimBackground(const QString &name, const QVariant &value)
+{
+    AnimationSettings anim = m_anim;
+    AnimationSettings::Background& b = anim.background;
+
+    if (name == u"enabled"_s) b.enabled = value.toBool();
+    else if (name == u"pattern"_s) b.pattern = value.toInt();
+    else if (name == u"step"_s) b.stepMs = value.toInt();
+    else if (name == u"fade"_s) b.fadeMs = value.toInt();
+    else if (name == u"curve"_s) b.fadeCurve = value.toInt();
+    else if (name == u"brightness"_s) b.brightness = value.toInt();
+    else if (name == u"pause"_s) b.pauseMs = value.toInt();
+    else if (name == u"reverse"_s) b.reverse = value.toBool();
+    else return;
+
     setAnimSettings(anim, true);
 }
 
