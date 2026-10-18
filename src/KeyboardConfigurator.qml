@@ -2011,7 +2011,16 @@ You can create an issue on GitHub, and I can guide you through the steps to accq
                             property var heldKeys: []
 
                             onVisibleChanged: if (!visible) recording = false
-                            onRecordingChanged: heldKeys = []
+                            onRecordingChanged: {
+                                heldKeys = []
+                                lastPressTime = 0
+                            }
+
+                            // Turn the gaps between presses into pauses while recording
+                            property bool keepTiming: false
+
+                            // When the last step was recorded, in ms since the epoch
+                            property real lastPressTime: 0
 
                             // Takes the focus while recording so presses on the real keyboard become steps
                             Item {
@@ -2029,8 +2038,20 @@ You can create an issue on GitHub, and I can guide you through the steps to accq
                                     var withPrevious = sequenceEditor.heldKeys.length > 0
                                     sequenceEditor.heldKeys.push(event.nativeScanCode)
 
-                                    sequenceRecordWarning.visible =
-                                            !keyboardConfiguratorController.recordKey(event.nativeScanCode, withPrevious)
+                                    var now = Date.now()
+                                    var gap = 0
+
+                                    if (sequenceEditor.keepTiming && !withPrevious && sequenceEditor.lastPressTime > 0)
+                                    {
+                                        gap = now - sequenceEditor.lastPressTime
+                                    }
+
+                                    var recorded = keyboardConfiguratorController.recordKey(event.nativeScanCode,
+                                                                                            withPrevious, gap)
+                                    sequenceRecordWarning.visible = !recorded
+
+                                    // Chord keys join the step, they don't restart the gap
+                                    if (recorded && !withPrevious) sequenceEditor.lastPressTime = now
                                 }
 
                                 Keys.onReleased: (event) => {
@@ -2125,6 +2146,24 @@ You can create an issue on GitHub, and I can guide you through the steps to accq
 
                                     ToolTip.visible: hovered
                                     ToolTip.text: qsTr("Press keys on your keyboard to add them as steps. Keys pressed together become one step.")
+                                    ToolTip.delay: mainWindowController.toolTipDelay
+                                    ToolTip.timeout: mainWindowController.toolTipTimeout
+                                }
+
+                                CheckBox {
+                                    anchors.verticalCenter: parent.verticalCenter
+
+                                    text: qsTr("Keep timing")
+
+                                    // Changing it mid-recording would steal focus and end the recording
+                                    focusPolicy: Qt.NoFocus
+
+                                    checked: sequenceEditor.keepTiming
+
+                                    onToggled: sequenceEditor.keepTiming = checked
+
+                                    ToolTip.visible: hovered
+                                    ToolTip.text: qsTr("Record the gaps between your key presses as pauses, so the sequence plays back with your rhythm. A faster Speed records the timing more precisely; changing Speed later plays the whole rhythm faster or slower.")
                                     ToolTip.delay: mainWindowController.toolTipDelay
                                     ToolTip.timeout: mainWindowController.toolTipTimeout
                                 }

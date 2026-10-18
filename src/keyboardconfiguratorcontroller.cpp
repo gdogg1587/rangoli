@@ -422,7 +422,9 @@ QString KeyboardConfiguratorController::addSequenceText(const QString &text)
     return unknown;
 }
 
-bool KeyboardConfiguratorController::recordKey(int nativeScanCode, bool withPrevious)
+static constexpr int MaxRecordedGapMs = 5000;
+
+bool KeyboardConfiguratorController::recordKey(int nativeScanCode, bool withPrevious, int gapMs)
 {
     const int keyIndex = keyIndexForCode(KeyInput::codeForNativeScanCode(nativeScanCode));
 
@@ -436,6 +438,14 @@ bool KeyboardConfiguratorController::recordKey(int nativeScanCode, bool withPrev
     }
     else
     {
+        // The previous step already lasts one step, the rest of the gap is pauses.
+        // Long gaps are capped so walking away doesn't add a minute of nothing.
+        if (gapMs > 0 && !sequence.isEmpty())
+        {
+            const int pauses = qRound(qMin(gapMs, MaxRecordedGapMs) / double(qMax(1, m_anim.stepMs))) - 1;
+            for (int n = 0; n < pauses; n++) sequence << QList<int>{};
+        }
+
         sequence << QList<int>{keyIndex};
     }
 

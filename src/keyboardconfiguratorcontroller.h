@@ -188,7 +188,9 @@ public:
     Q_INVOKABLE QString addSequenceText(const QString& text);
     // Adds a step for a physical key press, or adds it to the last step when
     // it was pressed together with other keys. False if the key is unknown.
-    Q_INVOKABLE bool recordKey(int nativeScanCode, bool withPrevious);
+    // gapMs is the time since the previous press, turned into pauses so the
+    // sequence keeps the rhythm it was typed in; 0 or less adds no pauses
+    Q_INVOKABLE bool recordKey(int nativeScanCode, bool withPrevious, int gapMs = 0);
 
 signals:
     void loadName(const QString& name);
