@@ -26,6 +26,7 @@
 #include "messagehandler.h"
 #include "hidconnection.h"
 #include "systemtray.h"
+#include "singleinstance.h"
 
 #ifdef Q_OS_UNIX
 #include <csignal>
@@ -46,6 +47,24 @@ using namespace Qt::Literals::StringLiterals;
 
 int main(int argc, char *argv[])
 {
+    // Checked before the log opens, which would wipe the running copy's log
+    SingleInstance singleInstance;
+
+    if (!singleInstance.tryLock())
+    {
+        QCoreApplication app(argc, argv);
+
+        qInfo("Rangoli is already running");
+
+        // Starting at login gives way quietly, anything else brings the running copy forward
+        if (!app.arguments().contains(u"start_to_system_tray_icon"_s))
+        {
+            SingleInstance::showRunningInstance();
+        }
+
+        return 0;
+    }
+
     if (MessageHandler::init())
     {
         qInstallMessageHandler(MessageHandler::handler);
@@ -124,6 +143,10 @@ int main(int argc, char *argv[])
 
     SystemTray systemTray(&mainWindowController, &keyboardConfiguratorController);
     engine.rootContext()->setContextProperty(u"systemTray"_s, &systemTray);
+
+    QObject::connect(&singleInstance, &SingleInstance::showRequested,
+                     &systemTray, &SystemTray::showWindowRequested);
+    singleInstance.listen();
 
     engine.setContextForObject(&settingsController, engine.rootContext());
     engine.rootContext()->setContextProperty(u"settingsController"_s, &settingsController);
