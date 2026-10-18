@@ -20,6 +20,13 @@
 
 using namespace Qt::Literals::StringLiterals;
 
+// The program to start at boot. An AppImage runs from a temporary mount, so use
+// the AppImage file itself
+static QString executablePath()
+{
+    return qEnvironmentVariable("APPIMAGE", QCoreApplication::arguments().at(0));
+}
+
 bool StartAtBoot::createStarter()
 {
     qInfo() << "Create starter";
@@ -55,7 +62,7 @@ bool StartAtBoot::createStarter()
               "Type=simple\n"
               "ExecStartPre=/bin/sleep 3\n"
               "Environment=\"DISPLAY=:0\"\n"
-              "ExecStart=\""_s << QCoreApplication::arguments().at(0) << u"\" start_to_system_tray_icon\n"
+              "ExecStart=\""_s << executablePath() << u"\" start_to_system_tray_icon\n"
               "[Install]\n"
               "WantedBy=default.target\n"_s;
 

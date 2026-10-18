@@ -12,7 +12,9 @@
  */
 
 #include "mainwindowcontroller.h"
+#include <QDirIterator>
 #include <QFile>
+#include <QStandardPaths>
 #include <QProcess>
 #include <QDesktopServices>
 #include "settingscontroller.h"
@@ -377,6 +379,37 @@ void MainWindowController::setCloseToSystemTrayIcon(const bool &closeToSystemTra
     emit closeToSystemTrayIconChanged();
 }
 
+bool MainWindowController::copyUdevWriterFiles(const QString &workPath)
+{
+    qInfo() << "Copy udev writer files to" << workPath;
+
+    QDir workDir{workPath};
+    workDir.removeRecursively();
+
+    if (!workDir.mkpath(u"."_s)) return false;
+
+    const QString writer{QStringLiteral(LINUX_UDEV_RULE_WRITER_NAME)};
+
+    if (!QFile::copy(writer, workDir.filePath(writer))
+        || !QFile::setPermissions(workDir.filePath(writer), QFile::permissions(writer) | QFile::WriteOwner))
+    {
+        return false;
+    }
+
+    QDir keyboards{u"keyboards"_s};
+    QDirIterator it{keyboards.path(), QDir::Files, QDirIterator::Subdirectories};
+
+    while (it.hasNext())
+    {
+        const QString source = it.next();
+        const QString target = workDir.filePath(source);
+
+        if (!workDir.mkpath(QFileInfo(target).path()) || !QFile::copy(source, target)) return false;
+    }
+
+    return true;
+}
+
 void MainWindowController::launchLinuxUdevWriter()
 {
     qInfo() << "Launch Linux udev writer";
@@ -394,12 +427,32 @@ void MainWindowController::launchLinuxUdevWriter()
         return;
     }
 
+    // An AppImage runs from a read-only mount that root can't read, so run the
+    // writer from a copy in a writable folder
+    QString workPath{QDir::currentPath()};
+
+    if (qEnvironmentVariableIsSet("APPIMAGE"))
+    {
+        workPath = QStandardPaths::writableLocation(QStandardPaths::CacheLocation) + u"/udev-rule-writer"_s;
+
+        if (!copyUdevWriterFiles(workPath))
+        {
+            emit loadEnhancedDialog(EnhancedDialog {
+                                        tr("Error"),
+                                        tr("Unable to prepare the udev rule writer.")
+                                    });
+
+            setLinuxUdevPopupProceedButtonEnabled(true);
+            return;
+        }
+    }
+
     QString exitOK{u"0"_s};
     QString exitKeyboardsReadFailed{u"1"_s};
     QString exitRuleWriteFailed{u"2"_s};
 
     QString oldID;
-    QString outputPath{QStringLiteral("%1_OUTPUT").arg(QStringLiteral(LINUX_UDEV_RULE_WRITER_NAME))};
+    QString outputPath{QStringLiteral("%1/%2_OUTPUT").arg(workPath, QStringLiteral(LINUX_UDEV_RULE_WRITER_NAME))};
     QFile oldOutput{outputPath};
 
     if (oldOutput.exists())
@@ -541,11 +594,27 @@ void MainWindowController::launchLinuxUdevWriter()
         }
     });
 
+    udevWriter->setWorkingDirectory(workPath);
+
+    // Many desktops don't ship xterm, but most have a graphical password prompt (pkexec)
+    if (QStandardPaths::findExecutable(QStringLiteral(LINUX_TERMINAL)).isEmpty()
+        && !QStandardPaths::findExecutable(u"pkexec"_s).isEmpty())
+    {
+        qInfo() << LINUX_TERMINAL << "not found, use pkexec";
+
+        udevWriter->start(u"pkexec"_s, QStringList()
+                          << QStringLiteral("%1/%2").arg(workPath, QStringLiteral(LINUX_UDEV_RULE_WRITER_NAME))
+                          << QStringLiteral("%1/keyboards").arg(workPath)
+                          << QStringLiteral(LINUX_UDEV_RULES_PATH)
+                          << outputPath << exitOK << exitKeyboardsReadFailed << exitRuleWriteFailed);
+        return;
+    }
+
     udevWriter->start(QStringLiteral(LINUX_TERMINAL), QStringList() << u"-e"_s <<
                           QStringLiteral("echo -n \"\\033]0;%1\\007\" && sudo ./%2 %3 %4 %5 %6 %7 %8")
                           .arg(tr("Rangoli - Create udev Rules"),
                                QStringLiteral(LINUX_UDEV_RULE_WRITER_NAME),
-                               QStringLiteral("%1/keyboards").arg(QDir::currentPath()),
+                               QStringLiteral("%1/keyboards").arg(workPath),
                                QStringLiteral(LINUX_UDEV_RULES_PATH),
                                outputPath, exitOK, exitKeyboardsReadFailed, exitRuleWriteFailed));
 }

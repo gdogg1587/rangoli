@@ -143,6 +143,7 @@ private:
 
     bool m_linuxUdevPopupProceedButtonEnabled;
 
+    bool copyUdevWriterFiles(const QString& workPath);
 };
 
 #endif // MAINWINDOWCONTROLLER_H
