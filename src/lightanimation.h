@@ -41,9 +41,11 @@ struct AnimationSettings
     int pattern{Sequence};
     int stepMs{120};
     int fadeMs{600};
+    int fadeInMs{0};
     int brightness{250};
     int loop{Repeat};
     int pauseMs{0};
+    bool reverse{false};
 
     // Read and write the "animation" subgroup of the current settings group
     void write(QSettings& settings) const;
@@ -84,6 +86,8 @@ private:
 
     qint64 cycleLength() const;
     int envelope(double age) const;
+    double breatheIn() const;
+    double breatheOut() const;
 };
 
 #endif // LIGHTANIMATION_H

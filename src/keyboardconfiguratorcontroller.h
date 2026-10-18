@@ -68,6 +68,8 @@ class KeyboardConfiguratorController : public QObject
     Q_PROPERTY(int animPattern READ animPattern WRITE setAnimPattern NOTIFY animSettingsChanged)
     Q_PROPERTY(int animStep READ animStep WRITE setAnimStep NOTIFY animSettingsChanged)
     Q_PROPERTY(int animFade READ animFade WRITE setAnimFade NOTIFY animSettingsChanged)
+    Q_PROPERTY(int animFadeIn READ animFadeIn WRITE setAnimFadeIn NOTIFY animSettingsChanged)
+    Q_PROPERTY(bool animReverse READ animReverse WRITE setAnimReverse NOTIFY animSettingsChanged)
     Q_PROPERTY(int animBrightness READ animBrightness WRITE setAnimBrightness NOTIFY animSettingsChanged)
     Q_PROPERTY(int animLoop READ animLoop WRITE setAnimLoop NOTIFY animSettingsChanged)
     Q_PROPERTY(int animPause READ animPause WRITE setAnimPause NOTIFY animSettingsChanged)
@@ -131,6 +133,8 @@ public:
     int animPattern();
     int animStep();
     int animFade();
+    int animFadeIn();
+    bool animReverse();
     int animBrightness();
     int animLoop();
     int animPause();
@@ -170,8 +174,9 @@ public:
     Q_INVOKABLE QString stepLabels(int keyIndex);
     // Adds a step per typed character, returns the characters with no key
     Q_INVOKABLE QString addSequenceText(const QString& text);
-    // Adds a step for a physical key press, false if the key is unknown
-    Q_INVOKABLE bool recordKey(int nativeScanCode);
+    // Adds a step for a physical key press, or adds it to the last step when
+    // it was pressed together with other keys. False if the key is unknown.
+    Q_INVOKABLE bool recordKey(int nativeScanCode, bool withPrevious);
 
 signals:
     void loadName(const QString& name);
@@ -217,6 +222,8 @@ public slots:
     void setSelectedProfileIndex(const int& selectedProfileIndex);
     void clickKey(const int& x, const int& y);
     void clickKeySecondary(const int& x, const int& y);
+    // Adds the key to (or takes it out of) the last sequence step
+    void clickKeyGrouped(const int& x, const int& y);
     void selectAllKeysForCustomMode();
     void unselectAllKeysForCustomMode();
 
@@ -231,6 +238,8 @@ public slots:
     void setAnimPattern(const int& pattern);
     void setAnimStep(const int& stepMs);
     void setAnimFade(const int& fadeMs);
+    void setAnimFadeIn(const int& fadeInMs);
+    void setAnimReverse(const bool& reverse);
     void setAnimBrightness(const int& brightness);
     void setAnimLoop(const int& loop);
     void setAnimPause(const int& pauseMs);
@@ -317,6 +326,7 @@ private:
     void setAnimSettings(const AnimationSettings& anim, const bool& edited);
 
     void setSequence(const QList<QList<int>>& sequence, const bool& edited);
+    void toggleKeyInLastStep(const int& keyIndex);
     void syncSelectionFromSequence();
     QList<QList<int>> sequenceByBufferIndex();
     void loadSequenceByBufferIndex(const QList<QList<int>>& sequence);

@@ -1349,6 +1349,10 @@ You can create an issue on GitHub, and I can guide you through the steps to accq
                         {
                             keyboardConfiguratorController.clickKeySecondary(l.x, l.y)
                         }
+                        else if (mouse.modifiers & (Qt.ShiftModifier | Qt.ControlModifier))
+                        {
+                            keyboardConfiguratorController.clickKeyGrouped(l.x, l.y)
+                        }
                         else
                         {
                             keyboardConfiguratorController.clickKey(l.x, l.y)
@@ -1718,9 +1722,21 @@ You can create an issue on GitHub, and I can guide you through the steps to accq
                                 onActivated: (index) => keyboardConfiguratorController.animPattern = index
                             }
 
-                            Item {
+                            // Breathing and twinkle have no direction
+                            CheckBox {
                                 width: 80
-                                height: 1
+
+                                text: qsTr("Reverse")
+                                enabled: keyboardConfiguratorController.animPattern <= 3
+
+                                checked: keyboardConfiguratorController.animReverse
+
+                                onToggled: keyboardConfiguratorController.animReverse = checked
+
+                                ToolTip.visible: hovered
+                                ToolTip.text: qsTr("Play backwards: right to left, bottom to top, or a ripple coming inwards")
+                                ToolTip.delay: mainWindowController.toolTipDelay
+                                ToolTip.timeout: mainWindowController.toolTipTimeout
                             }
 
                             Label {
@@ -1751,7 +1767,31 @@ You can create an issue on GitHub, and I can guide you through the steps to accq
                             }
 
                             Label {
-                                text: animationControls.isBreathing ? qsTr("Breath") : qsTr("Fade")
+                                text: animationControls.isBreathing ? qsTr("Breathe in") : qsTr("Fade in")
+                            }
+
+                            Slider {
+                                width: 180
+                                from: 0
+                                to: 3000
+                                stepSize: 50
+                                snapMode: Slider.SnapAlways
+
+                                value: keyboardConfiguratorController.animFadeIn
+
+                                onMoved: keyboardConfiguratorController.animFadeIn = value
+                            }
+
+                            Label {
+                                width: 80
+                                elide: Text.ElideRight
+                                text: (animationControls.isBreathing && keyboardConfiguratorController.animFadeIn === 0)
+                                      ? qsTr("Same as out")
+                                      : animationControls.seconds(keyboardConfiguratorController.animFadeIn)
+                            }
+
+                            Label {
+                                text: animationControls.isBreathing ? qsTr("Breathe out") : qsTr("Fade out")
                             }
 
                             Slider {
@@ -1848,7 +1888,7 @@ You can create an issue on GitHub, and I can guide you through the steps to accq
                             opacity: 0.7
 
                             text: [
-                                qsTr("Click keys in the order they should light up; a key can be used more than once. Right-click a key to remove its last step."),
+                                qsTr("Click keys in the order they should light up; a key can be used more than once. Shift+click adds a key to the last step so they light together. Right-click a key to remove its last step."),
                                 qsTr("Sweeps across the whole keyboard, or only across the keys you pick (pick 2 or more)."),
                                 qsTr("Sweeps down the whole keyboard, or only across the keys you pick (pick 2 or more)."),
                                 qsTr("Spreads out from the first key you pick, or the middle of the keyboard. Pick more keys to limit it to those."),
@@ -1869,7 +1909,11 @@ You can create an issue on GitHub, and I can guide you through the steps to accq
 
                             property bool recording: false
 
+                            // Native scan codes currently held down, so chords record as one step
+                            property var heldKeys: []
+
                             onVisibleChanged: if (!visible) recording = false
+                            onRecordingChanged: heldKeys = []
 
                             // Takes the focus while recording so presses on the real keyboard become steps
                             Item {
@@ -1882,11 +1926,21 @@ You can create an issue on GitHub, and I can guide you through the steps to accq
 
                                 Keys.onPressed: (event) => {
                                     event.accepted = true
-                                    if (!event.isAutoRepeat)
-                                    {
-                                        sequenceRecordWarning.visible =
-                                                !keyboardConfiguratorController.recordKey(event.nativeScanCode)
-                                    }
+                                    if (event.isAutoRepeat) return
+
+                                    var withPrevious = sequenceEditor.heldKeys.length > 0
+                                    sequenceEditor.heldKeys.push(event.nativeScanCode)
+
+                                    sequenceRecordWarning.visible =
+                                            !keyboardConfiguratorController.recordKey(event.nativeScanCode, withPrevious)
+                                }
+
+                                Keys.onReleased: (event) => {
+                                    event.accepted = true
+                                    if (event.isAutoRepeat) return
+
+                                    var i = sequenceEditor.heldKeys.indexOf(event.nativeScanCode)
+                                    if (i !== -1) sequenceEditor.heldKeys.splice(i, 1)
                                 }
 
                                 onActiveFocusChanged: if (!activeFocus) sequenceEditor.recording = false
@@ -1972,7 +2026,7 @@ You can create an issue on GitHub, and I can guide you through the steps to accq
                                     }
 
                                     ToolTip.visible: hovered
-                                    ToolTip.text: qsTr("Press keys on your keyboard to add them as steps")
+                                    ToolTip.text: qsTr("Press keys on your keyboard to add them as steps. Keys pressed together become one step.")
                                     ToolTip.delay: mainWindowController.toolTipDelay
                                     ToolTip.timeout: mainWindowController.toolTipTimeout
                                 }

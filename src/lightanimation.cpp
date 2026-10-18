@@ -32,6 +32,8 @@ void AnimationSettings::write(QSettings &settings) const
     settings.setValue(u"pattern"_s, pattern);
     settings.setValue(u"step_ms"_s, stepMs);
     settings.setValue(u"fade_ms"_s, fadeMs);
+    settings.setValue(u"fade_in_ms"_s, fadeInMs);
+    settings.setValue(u"reverse"_s, reverse);
     settings.setValue(u"brightness"_s, brightness);
     settings.setValue(u"loop"_s, loop);
     settings.setValue(u"pause_ms"_s, pauseMs);
@@ -47,6 +49,8 @@ AnimationSettings AnimationSettings::read(QSettings &settings)
     a.pattern = settings.value(u"pattern"_s, a.pattern).toInt();
     a.stepMs = settings.value(u"step_ms"_s, a.stepMs).toInt();
     a.fadeMs = settings.value(u"fade_ms"_s, a.fadeMs).toInt();
+    a.fadeInMs = settings.value(u"fade_in_ms"_s, a.fadeInMs).toInt();
+    a.reverse = settings.value(u"reverse"_s, a.reverse).toBool();
     a.brightness = settings.value(u"brightness"_s, a.brightness).toInt();
     a.loop = settings.value(u"loop"_s, a.loop).toInt();
     a.pauseMs = settings.value(u"pause_ms"_s, a.pauseMs).toInt();
@@ -82,6 +86,11 @@ void LightAnimation::prepare(const QList<Key> &keys, const QList<int> &selectedK
         if (!m_offsets.isEmpty())
         {
             m_span = double(sequence.size() - 1) * m_settings.stepMs;
+        }
+
+        if (m_settings.reverse)
+        {
+            for (auto& offset : m_offsets) offset = m_span - offset;
         }
 
         return;
@@ -144,6 +153,12 @@ void LightAnimation::prepare(const QList<Key> &keys, const QList<int> &selectedK
         m_offsets << offset;
         m_span = qMax(m_span, offset);
     }
+
+    // Right to left, bottom to top, or a ripple coming inwards
+    if (m_settings.reverse)
+    {
+        for (auto& offset : m_offsets) offset = m_span - offset;
+    }
 }
 
 QList<int> LightAnimation::render(qint64 ms) const
@@ -158,10 +173,19 @@ QList<int> LightAnimation::render(qint64 ms) const
 
     if (m_settings.pattern == AnimationSettings::Breathing)
     {
-        const double period = qMax(2 * m_settings.fadeMs, 200);
-        const double level = (t < period)
-                ? m_settings.brightness * (0.5 - 0.5 * qCos(2 * M_PI * t / period))
-                : 0;
+        const double in = breatheIn();
+        const double out = breatheOut();
+
+        double level = 0;
+
+        if (t < in)
+        {
+            level = m_settings.brightness * (0.5 - 0.5 * qCos(M_PI * t / in));
+        }
+        else if (t < in + out)
+        {
+            level = m_settings.brightness * (0.5 + 0.5 * qCos(M_PI * (t - in) / out));
+        }
 
         for (auto&& i : m_participants) levels[i] = qRound(level);
     }
@@ -243,23 +267,44 @@ qint64 LightAnimation::cycleLength() const
     switch (m_settings.pattern)
     {
     case AnimationSettings::Breathing:
-        length = qMax(2 * m_settings.fadeMs, 200);
+        length = qint64(breatheIn() + breatheOut());
         break;
     case AnimationSettings::Twinkle:
-        length = qint64(m_settings.stepMs) * m_participants.size() + m_settings.fadeMs;
+        length = qint64(m_settings.stepMs) * m_participants.size() + m_settings.fadeInMs + m_settings.fadeMs;
         break;
     default:
-        // Without a fade each key stays lit for one step instead
-        length = qint64(m_span) + qMax(m_settings.fadeMs, m_settings.stepMs);
+        // Without a fade out each key stays lit for one step instead
+        length = qint64(m_span) + m_settings.fadeInMs + qMax(m_settings.fadeMs, m_settings.stepMs);
         break;
     }
 
     return qMax<qint64>(1, length + m_settings.pauseMs);
 }
 
+double LightAnimation::breatheIn() const
+{
+    // Without a separate fade in, breathe in as long as out
+    return m_settings.fadeInMs > 0 ? m_settings.fadeInMs : breatheOut();
+}
+
+double LightAnimation::breatheOut() const
+{
+    return qMax(m_settings.fadeMs, 100);
+}
+
 int LightAnimation::envelope(double age) const
 {
     if (age < 0) return 0;
+
+    if (m_settings.fadeInMs > 0)
+    {
+        if (age < m_settings.fadeInMs)
+        {
+            return qRound(m_settings.brightness * age / m_settings.fadeInMs);
+        }
+
+        age -= m_settings.fadeInMs;
+    }
 
     if (m_settings.fadeMs <= 0)
     {

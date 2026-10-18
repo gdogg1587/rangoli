@@ -171,6 +171,16 @@ int KeyboardConfiguratorController::animFade()
     return m_anim.fadeMs;
 }
 
+int KeyboardConfiguratorController::animFadeIn()
+{
+    return m_anim.fadeInMs;
+}
+
+bool KeyboardConfiguratorController::animReverse()
+{
+    return m_anim.reverse;
+}
+
 int KeyboardConfiguratorController::animBrightness()
 {
     return m_anim.brightness;
@@ -382,14 +392,23 @@ QString KeyboardConfiguratorController::addSequenceText(const QString &text)
     return unknown;
 }
 
-bool KeyboardConfiguratorController::recordKey(int nativeScanCode)
+bool KeyboardConfiguratorController::recordKey(int nativeScanCode, bool withPrevious)
 {
     const int keyIndex = keyIndexForCode(KeyInput::codeForNativeScanCode(nativeScanCode));
 
     if (keyIndex == -1) return false;
 
     QList<QList<int>> sequence = m_sequence;
-    sequence << QList<int>{keyIndex};
+
+    if (withPrevious && !sequence.isEmpty() && !sequence.last().isEmpty())
+    {
+        if (!sequence.last().contains(keyIndex)) sequence.last() << keyIndex;
+    }
+    else
+    {
+        sequence << QList<int>{keyIndex};
+    }
+
     setSequence(sequence, true);
 
     return true;
@@ -654,6 +673,20 @@ void KeyboardConfiguratorController::clickKeySecondary(const int &x, const int &
     }
 }
 
+void KeyboardConfiguratorController::clickKeyGrouped(const int &x, const int &y)
+{
+    if (!(m_selectedMode == Mode::Light && editingSequence()))
+    {
+        clickKey(x, y);
+        return;
+    }
+
+    const int index = getKeyIndexAtLocation(x, y);
+    if (index == -1) return;
+
+    toggleKeyInLastStep(index);
+}
+
 void KeyboardConfiguratorController::selectAllKeysForCustomMode()
 {
     if (editingSequence())
@@ -867,6 +900,20 @@ void KeyboardConfiguratorController::setAnimFade(const int &fadeMs)
     setAnimSettings(anim, true);
 }
 
+void KeyboardConfiguratorController::setAnimFadeIn(const int &fadeInMs)
+{
+    AnimationSettings anim = m_anim;
+    anim.fadeInMs = fadeInMs;
+    setAnimSettings(anim, true);
+}
+
+void KeyboardConfiguratorController::setAnimReverse(const bool &reverse)
+{
+    AnimationSettings anim = m_anim;
+    anim.reverse = reverse;
+    setAnimSettings(anim, true);
+}
+
 void KeyboardConfiguratorController::setAnimBrightness(const int &brightness)
 {
     AnimationSettings anim = m_anim;
@@ -949,6 +996,28 @@ void KeyboardConfiguratorController::setSequence(const QList<QList<int>> &sequen
         markCustomLightModeKeysEdited();
         setUnsavedChanges(true);
     }
+}
+
+void KeyboardConfiguratorController::toggleKeyInLastStep(const int &keyIndex)
+{
+    QList<QList<int>> sequence = m_sequence;
+
+    // Nothing to join yet (or the last step is a pause): start a new step
+    if (sequence.isEmpty() || sequence.last().isEmpty())
+    {
+        sequence << QList<int>{keyIndex};
+    }
+    else if (sequence.last().contains(keyIndex))
+    {
+        sequence.last().removeOne(keyIndex);
+        if (sequence.last().isEmpty()) sequence.removeLast();
+    }
+    else
+    {
+        sequence.last() << keyIndex;
+    }
+
+    setSequence(sequence, true);
 }
 
 void KeyboardConfiguratorController::syncSelectionFromSequence()
