@@ -39,6 +39,7 @@ set(SOURCE_LIST
     profilemodel.h profilemodel.cpp
     settingscontroller.h settingscontroller.cpp
     startatboot.h startatboot.cpp
+    systemtray.h systemtray.cpp
 
     resources.qrc
 )

@@ -15,7 +15,6 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Controls.Material
 import QtQuick.Controls.Material.impl
-import Qt.labs.platform
 import QtQml.Models
 
 import Rangoli
@@ -55,7 +54,7 @@ ApplicationWindow {
         function onHide()
         {
             hide()
-            if (mainWindowController.startToSystemTrayIcon) systemTrayIcon.visible = true
+            if (mainWindowController.startToSystemTrayIcon) systemTray.visible = true
         }
 
         function onClose()
@@ -85,7 +84,7 @@ ApplicationWindow {
 
         function onAlwaysShowSystemTrayIconChanged()
         {
-            systemTrayIcon.visible = mainWindowController.alwaysShowSystemTrayIcon
+            systemTray.visible = mainWindowController.alwaysShowSystemTrayIcon
         }
 
         function onOpenLinuxUdevPopup()
@@ -105,7 +104,7 @@ ApplicationWindow {
         if (mainWindowController.closeToSystemTrayIcon)
         {
             close.accepted = false
-            systemTrayIcon.visible = true
+            systemTray.visible = true
             window.hide()
             sv.pop(null)
             return
@@ -121,59 +120,16 @@ ApplicationWindow {
         }
     }
 
-    SystemTrayIcon {
-        id: systemTrayIcon
+    Connections {
+        target: systemTray
 
-        tooltip: qsTr("Rangoli")
+        function onShowWindowRequested()
+        {
+            if (!mainWindowController.alwaysShowSystemTrayIcon) systemTray.visible = false
 
-        icon.source: Icons.get(Icons.Rangoli)
-
-        onActivated: (reason) => {
-            if (reason === SystemTrayIcon.Context)
-            {
-                systemTrayMenu.open();
-            }
-            else if (reason === SystemTrayIcon.Trigger)
-            {
-                if (!mainWindowController.alwaysShowSystemTrayIcon) systemTrayIcon.visible = false
-
-                window.show()
-                window.raise()
-                window.requestActivate()
-            }
-        }
-
-        menu: Menu {
-            id: systemTrayMenu
-
-            // Nested per-keyboard submenus crash Qt < 6.5 (QTBUG-55199),
-            // so list profiles flat and apply them to the first keyboard.
-            Instantiator {
-                model: keyboardConfiguratorController.profiles
-
-                delegate: MenuItem {
-                    text: model.name
-                    onTriggered: {
-                        mainWindowController.loadKeyboard(0)
-                        keyboardConfiguratorController.selectedProfileIndex = model.index
-                    }
-                }
-
-                onObjectAdded: (index, object) => systemTrayMenu.insertItem(index, object)
-                onObjectRemoved: (index, object) => systemTrayMenu.removeItem(object)
-            }
-
-            MenuSeparator {}
-
-            MenuItem {
-                text: qsTr("Quit")
-
-                onTriggered: {
-                    mainWindowController.closeToSystemTrayIcon = false
-                    mainWindowController.interruptClose = false
-                    mainWindowController.quit()
-                }
-            }
+            window.show()
+            window.raise()
+            window.requestActivate()
         }
     }
 

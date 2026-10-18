@@ -38,7 +38,7 @@ KeyboardConfiguratorController::KeyboardConfiguratorController(QObject *parent)
       m_keyCodesProxy{new KeyCodeModelProxy{this}},
       m_customMappedKeys{new CustomMappedKeys{this}},
       m_liveFrameInFlight{false}, m_liveFailures{0}, m_playing{false},
-      m_startPlaybackAfterSave{false}
+      m_startPlaybackAfterSave{false}, m_livePrepared{false}
 {
     // Anything that changes the picked keys changes the preview
     connect(this, &KeyboardConfiguratorController::customLightModeKeysChanged,
@@ -199,6 +199,11 @@ int KeyboardConfiguratorController::animPause()
 const bool &KeyboardConfiguratorController::playing()
 {
     return m_playing;
+}
+
+bool KeyboardConfiguratorController::canResumePlayback()
+{
+    return m_livePrepared && !m_playing;
 }
 
 bool KeyboardConfiguratorController::editingSequence()
@@ -940,6 +945,21 @@ void KeyboardConfiguratorController::stopPlayback()
     stopPlayback(true);
 }
 
+void KeyboardConfiguratorController::resumePlayback()
+{
+    if (!m_livePrepared || m_playing || !m_liveTimer) return;
+
+    qInfo() << "Resume live lighting";
+
+    m_liveFrameInFlight = false;
+    m_liveFailures = 0;
+    m_liveClock.restart();
+    m_liveTimer->start();
+
+    m_playing = true;
+    emit playingChanged();
+}
+
 void KeyboardConfiguratorController::setAnimSettings(const AnimationSettings &anim, const bool &edited)
 {
     m_anim = anim;
@@ -1122,6 +1142,7 @@ void KeyboardConfiguratorController::startPlayback()
     m_liveKeys = selectedKeyboard().keys;
     m_livePath = selectedKeyboard().path;
     m_liveAnimation.prepare(m_liveKeys, m_customLightModeKeys->keyIndexes(), m_sequence, m_anim);
+    m_livePrepared = true;
 
     m_liveFrameInFlight = false;
     m_liveFailures = 0;
@@ -1550,6 +1571,10 @@ void KeyboardConfiguratorController::saveToKeyboard()
     {
         m_startPlaybackAfterSave = false;
         stopPlayback(false);
+
+        // The keyboard has new still lighting, the old animation no longer applies
+        m_livePrepared = false;
+        emit playingChanged();
     }
 
     setUnsavedChanges(false);

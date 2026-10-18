@@ -1211,6 +1211,23 @@ You can create an issue on GitHub, and I can guide you through the steps to accq
                 ToolTip.timeout: mainWindowController.toolTipTimeout
             }
 
+            EnhancedButton {
+                anchors.verticalCenter: parent.verticalCenter
+
+                visible: keyboardConfiguratorController.canResumePlayback
+
+                text: qsTr("Play animation")
+                flat: true
+                highlighted: true
+
+                onClicked: keyboardConfiguratorController.resumePlayback()
+
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("Play the last applied animation again")
+                ToolTip.delay: mainWindowController.toolTipDelay
+                ToolTip.timeout: mainWindowController.toolTipTimeout
+            }
+
             RoundButton {
                 id: resetButton
 

@@ -74,6 +74,7 @@ class KeyboardConfiguratorController : public QObject
     Q_PROPERTY(int animLoop READ animLoop WRITE setAnimLoop NOTIFY animSettingsChanged)
     Q_PROPERTY(int animPause READ animPause WRITE setAnimPause NOTIFY animSettingsChanged)
     Q_PROPERTY(bool playing READ playing NOTIFY playingChanged)
+    Q_PROPERTY(bool canResumePlayback READ canResumePlayback NOTIFY playingChanged)
 
     Q_PROPERTY(bool editingSequence READ editingSequence NOTIFY animSettingsChanged)
     Q_PROPERTY(QString sequenceText READ sequenceText NOTIFY sequenceChanged)
@@ -139,6 +140,7 @@ public:
     int animLoop();
     int animPause();
     const bool& playing();
+    bool canResumePlayback();
 
     bool editingSequence();
     QString sequenceText();
@@ -245,6 +247,8 @@ public slots:
     void setAnimPause(const int& pauseMs);
 
     void stopPlayback();
+    // Plays the last applied animation again after it was stopped
+    void resumePlayback();
 
     void undoSequenceStep();
     void addSequencePause();
@@ -322,6 +326,8 @@ private:
     int m_liveFailures;
     bool m_playing;
     bool m_startPlaybackAfterSave;
+    // m_liveAnimation holds an applied animation that can be resumed
+    bool m_livePrepared;
 
     void setAnimSettings(const AnimationSettings& anim, const bool& edited);
 

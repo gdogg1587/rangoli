@@ -25,6 +25,7 @@
 #include "icons.h"
 #include "messagehandler.h"
 #include "hidconnection.h"
+#include "systemtray.h"
 
 #ifdef Q_OS_UNIX
 #include <csignal>
@@ -120,6 +121,9 @@ int main(int argc, char *argv[])
 
     engine.setContextForObject(&keyboardConfiguratorController, engine.rootContext());
     engine.rootContext()->setContextProperty(u"keyboardConfiguratorController"_s, &keyboardConfiguratorController);
+
+    SystemTray systemTray(&mainWindowController, &keyboardConfiguratorController);
+    engine.rootContext()->setContextProperty(u"systemTray"_s, &systemTray);
 
     engine.setContextForObject(&settingsController, engine.rootContext());
     engine.rootContext()->setContextProperty(u"settingsController"_s, &settingsController);
