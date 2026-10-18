@@ -89,6 +89,12 @@ bool KeyboardConfiguratorController::keyMapEnabled()
     return selectedKeyboard().keyMapEnabled;
 }
 
+bool KeyboardConfiguratorController::macrosSupported()
+{
+    // The macro format has only been confirmed on some models, see docs/rk96/TESTING.md
+    return m_selectedKeyboardIndex != -1 && selectedKeyboard().macrosEnabled;
+}
+
 const int &KeyboardConfiguratorController::brightness()
 {
     return m_brightness;
@@ -1862,7 +1868,7 @@ void KeyboardConfiguratorController::saveToKeyboard()
 
     // Macros go before the key map that points at them, and only when they
     // changed, so the keyboard's flash isn't rewritten on every apply
-    if (selectedKeyboard().keyMapEnabled && m_macros->areaChanged())
+    if (selectedKeyboard().macrosEnabled && m_macros->areaChanged())
     {
         qInfo() << "Macros changed, send them too";
 
@@ -1907,6 +1913,10 @@ void KeyboardConfiguratorController::saveToKeyboard()
             {
                 finalKey |= eachMappedKey;
             }
+
+            // Leave the key's default in place rather than point it at a macro slot
+            // on a model whose macro format isn't known
+            if (!selectedKeyboard().macrosEnabled && MacroModel::isMacroCode(finalKey)) continue;
 
             setBufferKey((mapFullBuffer + (bufferIndex * 4)), finalKey);
         }

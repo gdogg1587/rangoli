@@ -1140,6 +1140,7 @@ Item {
                     // A key can play one of the macros stored on the keyboard instead
                     Row {
                         spacing: 10
+                        visible: keyboardConfiguratorController.macrosSupported
 
                         Label {
                             anchors.verticalCenter: parent.verticalCenter
@@ -1178,6 +1179,7 @@ Item {
                         text: qsTr("Edit macros...")
                         flat: true
                         highlighted: true
+                        visible: keyboardConfiguratorController.macrosSupported
 
                         onClicked: {
                             configureKeyMapPopup.close()
@@ -1468,7 +1470,7 @@ You can create an issue on GitHub, and I can guide you through the steps to accq
             bottomInset: 0
             background.implicitHeight: 50
 
-            visible: keyboardConfiguratorController.keyMapEnabled
+            visible: keyboardConfiguratorController.macrosSupported
 
             flat: true
 

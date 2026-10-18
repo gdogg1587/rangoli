@@ -49,6 +49,7 @@ class KeyboardConfiguratorController : public QObject
     Q_PROPERTY(bool unsavedChanges READ unsavedChanges WRITE setUnsavedChanges NOTIFY unsavedChangesChanged)
     Q_PROPERTY(bool savingChanges READ savingChanges WRITE setSavingChanges NOTIFY savingChangesChanged)
     Q_PROPERTY(bool keyMapEnabled READ keyMapEnabled NOTIFY keyMapEnabledChanged)
+    Q_PROPERTY(bool macrosSupported READ macrosSupported NOTIFY keyMapEnabledChanged)
 
     Q_PROPERTY(int brightness READ brightness WRITE setBrightness NOTIFY brightnessChanged)
     Q_PROPERTY(int animation READ animation WRITE setAnimation NOTIFY animationChanged)
@@ -126,6 +127,7 @@ public:
     const bool& unsavedChanges();
     const bool& savingChanges();
     bool keyMapEnabled();
+    bool macrosSupported();
 
     const int& brightness();
     const int& animation();

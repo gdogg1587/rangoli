@@ -213,6 +213,7 @@ void HIDConnectionWorker::refreshKeyboards(QPointer<KeyboardModel> connectedKeyb
                     keyMapEnabled,
                     configObj["lightEnabled"].toBool(),
                     configObj["rgb"].toBool(),
+                    keyMapEnabled && configObj["macrosEnabled"].toBool(),
                     topObj[0].toInt(), topObj[1].toInt(),
                     bottomObj[0].toInt(), bottomObj[1].toInt()
                 });
