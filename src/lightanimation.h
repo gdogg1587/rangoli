@@ -37,6 +37,12 @@ struct AnimationSettings
         Once
     };
 
+    enum FadeCurve {
+        Linear,
+        Smooth,
+        Comet
+    };
+
     bool enabled{false};
     int pattern{Sequence};
     int stepMs{120};
@@ -46,6 +52,16 @@ struct AnimationSettings
     int loop{Repeat};
     int pauseMs{0};
     bool reverse{false};
+
+    // Keys of trail behind a moving light; 0 uses fadeMs instead
+    int trailKeys{0};
+    int fadeCurve{Linear};
+
+    // Whether the pattern moves, so a trail in keys makes sense
+    bool hasDirection() const;
+
+    // Fade out time, worked out from the trail when one is set
+    int effectiveFadeMs() const;
 
     // Read and write the "animation" subgroup of the current settings group
     void write(QSettings& settings) const;
@@ -86,6 +102,7 @@ private:
 
     qint64 cycleLength() const;
     int envelope(double age) const;
+    double curve(double remaining) const;
     double breatheIn() const;
     double breatheOut() const;
 };

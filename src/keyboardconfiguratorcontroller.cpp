@@ -181,6 +181,26 @@ bool KeyboardConfiguratorController::animReverse()
     return m_anim.reverse;
 }
 
+int KeyboardConfiguratorController::animTrail()
+{
+    return m_anim.trailKeys;
+}
+
+int KeyboardConfiguratorController::animCurve()
+{
+    return m_anim.fadeCurve;
+}
+
+int KeyboardConfiguratorController::animEffectiveFade()
+{
+    return m_anim.effectiveFadeMs();
+}
+
+bool KeyboardConfiguratorController::animHasDirection()
+{
+    return m_anim.hasDirection();
+}
+
 int KeyboardConfiguratorController::animBrightness()
 {
     return m_anim.brightness;
@@ -919,6 +939,20 @@ void KeyboardConfiguratorController::setAnimReverse(const bool &reverse)
 {
     AnimationSettings anim = m_anim;
     anim.reverse = reverse;
+    setAnimSettings(anim, true);
+}
+
+void KeyboardConfiguratorController::setAnimTrail(const int &trailKeys)
+{
+    AnimationSettings anim = m_anim;
+    anim.trailKeys = trailKeys;
+    setAnimSettings(anim, true);
+}
+
+void KeyboardConfiguratorController::setAnimCurve(const int &fadeCurve)
+{
+    AnimationSettings anim = m_anim;
+    anim.fadeCurve = fadeCurve;
     setAnimSettings(anim, true);
 }
 

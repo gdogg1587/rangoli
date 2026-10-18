@@ -70,6 +70,10 @@ class KeyboardConfiguratorController : public QObject
     Q_PROPERTY(int animFade READ animFade WRITE setAnimFade NOTIFY animSettingsChanged)
     Q_PROPERTY(int animFadeIn READ animFadeIn WRITE setAnimFadeIn NOTIFY animSettingsChanged)
     Q_PROPERTY(bool animReverse READ animReverse WRITE setAnimReverse NOTIFY animSettingsChanged)
+    Q_PROPERTY(int animTrail READ animTrail WRITE setAnimTrail NOTIFY animSettingsChanged)
+    Q_PROPERTY(int animCurve READ animCurve WRITE setAnimCurve NOTIFY animSettingsChanged)
+    Q_PROPERTY(int animEffectiveFade READ animEffectiveFade NOTIFY animSettingsChanged)
+    Q_PROPERTY(bool animHasDirection READ animHasDirection NOTIFY animSettingsChanged)
     Q_PROPERTY(int animBrightness READ animBrightness WRITE setAnimBrightness NOTIFY animSettingsChanged)
     Q_PROPERTY(int animLoop READ animLoop WRITE setAnimLoop NOTIFY animSettingsChanged)
     Q_PROPERTY(int animPause READ animPause WRITE setAnimPause NOTIFY animSettingsChanged)
@@ -136,6 +140,10 @@ public:
     int animFade();
     int animFadeIn();
     bool animReverse();
+    int animTrail();
+    int animCurve();
+    int animEffectiveFade();
+    bool animHasDirection();
     int animBrightness();
     int animLoop();
     int animPause();
@@ -242,6 +250,8 @@ public slots:
     void setAnimFade(const int& fadeMs);
     void setAnimFadeIn(const int& fadeInMs);
     void setAnimReverse(const bool& reverse);
+    void setAnimTrail(const int& trailKeys);
+    void setAnimCurve(const int& fadeCurve);
     void setAnimBrightness(const int& brightness);
     void setAnimLoop(const int& loop);
     void setAnimPause(const int& pauseMs);

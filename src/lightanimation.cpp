@@ -34,6 +34,8 @@ void AnimationSettings::write(QSettings &settings) const
     settings.setValue(u"fade_ms"_s, fadeMs);
     settings.setValue(u"fade_in_ms"_s, fadeInMs);
     settings.setValue(u"reverse"_s, reverse);
+    settings.setValue(u"trail_keys"_s, trailKeys);
+    settings.setValue(u"fade_curve"_s, fadeCurve);
     settings.setValue(u"brightness"_s, brightness);
     settings.setValue(u"loop"_s, loop);
     settings.setValue(u"pause_ms"_s, pauseMs);
@@ -51,12 +53,25 @@ AnimationSettings AnimationSettings::read(QSettings &settings)
     a.fadeMs = settings.value(u"fade_ms"_s, a.fadeMs).toInt();
     a.fadeInMs = settings.value(u"fade_in_ms"_s, a.fadeInMs).toInt();
     a.reverse = settings.value(u"reverse"_s, a.reverse).toBool();
+    a.trailKeys = settings.value(u"trail_keys"_s, a.trailKeys).toInt();
+    a.fadeCurve = settings.value(u"fade_curve"_s, a.fadeCurve).toInt();
     a.brightness = settings.value(u"brightness"_s, a.brightness).toInt();
     a.loop = settings.value(u"loop"_s, a.loop).toInt();
     a.pauseMs = settings.value(u"pause_ms"_s, a.pauseMs).toInt();
     settings.endGroup();
 
     return a;
+}
+
+bool AnimationSettings::hasDirection() const
+{
+    return pattern == Sequence || pattern == WaveLeftRight
+            || pattern == WaveTopBottom || pattern == Ripple;
+}
+
+int AnimationSettings::effectiveFadeMs() const
+{
+    return (trailKeys > 0 && hasDirection()) ? trailKeys * stepMs : fadeMs;
 }
 
 void LightAnimation::prepare(const QList<Key> &keys, const QList<int> &selectedKeys,
@@ -270,11 +285,12 @@ qint64 LightAnimation::cycleLength() const
         length = qint64(breatheIn() + breatheOut());
         break;
     case AnimationSettings::Twinkle:
-        length = qint64(m_settings.stepMs) * m_participants.size() + m_settings.fadeInMs + m_settings.fadeMs;
+        length = qint64(m_settings.stepMs) * m_participants.size() + m_settings.fadeInMs
+                + m_settings.effectiveFadeMs();
         break;
     default:
         // Without a fade out each key stays lit for one step instead
-        length = qint64(m_span) + m_settings.fadeInMs + qMax(m_settings.fadeMs, m_settings.stepMs);
+        length = qint64(m_span) + m_settings.fadeInMs + qMax(m_settings.effectiveFadeMs(), m_settings.stepMs);
         break;
     }
 
@@ -300,18 +316,35 @@ int LightAnimation::envelope(double age) const
     {
         if (age < m_settings.fadeInMs)
         {
-            return qRound(m_settings.brightness * age / m_settings.fadeInMs);
+            // The fade in mirrors the fade out
+            return qRound(m_settings.brightness * curve(age / m_settings.fadeInMs));
         }
 
         age -= m_settings.fadeInMs;
     }
 
-    if (m_settings.fadeMs <= 0)
+    const int fadeMs = m_settings.effectiveFadeMs();
+
+    if (fadeMs <= 0)
     {
         return age < m_settings.stepMs ? m_settings.brightness : 0;
     }
 
-    if (age >= m_settings.fadeMs) return 0;
+    if (age >= fadeMs) return 0;
 
-    return qRound(m_settings.brightness * (1.0 - age / m_settings.fadeMs));
+    return qRound(m_settings.brightness * curve(1.0 - age / fadeMs));
+}
+
+double LightAnimation::curve(double remaining) const
+{
+    switch (m_settings.fadeCurve)
+    {
+    case AnimationSettings::Smooth:
+        return 0.5 - 0.5 * qCos(M_PI * remaining);
+    case AnimationSettings::Comet:
+        // Bright head that drops quickly into a long faint tail
+        return remaining * remaining * remaining;
+    default:
+        return remaining;
+    }
 }

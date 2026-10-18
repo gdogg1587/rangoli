@@ -1718,6 +1718,8 @@ You can create an issue on GitHub, and I can guide you through the steps to accq
                             horizontalItemAlignment: Grid.AlignHCenter
 
                             readonly property bool isBreathing: keyboardConfiguratorController.animPattern === 4
+                            readonly property bool trailOn: keyboardConfiguratorController.animTrail > 0 &&
+                                                            keyboardConfiguratorController.animHasDirection
 
                             function seconds(ms)
                             {
@@ -1811,6 +1813,7 @@ You can create an issue on GitHub, and I can guide you through the steps to accq
                                 text: animationControls.isBreathing ? qsTr("Breathe out") : qsTr("Fade out")
                             }
 
+                            // A trail sets the fade out instead
                             Slider {
                                 width: 180
                                 from: 0
@@ -1818,7 +1821,9 @@ You can create an issue on GitHub, and I can guide you through the steps to accq
                                 stepSize: 50
                                 snapMode: Slider.SnapAlways
 
-                                value: keyboardConfiguratorController.animFade
+                                enabled: !animationControls.trailOn
+
+                                value: keyboardConfiguratorController.animEffectiveFade
 
                                 onMoved: keyboardConfiguratorController.animFade = value
                             }
@@ -1826,7 +1831,68 @@ You can create an issue on GitHub, and I can guide you through the steps to accq
                             Label {
                                 width: 80
                                 elide: Text.ElideRight
-                                text: animationControls.seconds(keyboardConfiguratorController.animFade)
+                                text: animationControls.seconds(keyboardConfiguratorController.animEffectiveFade)
+                            }
+
+                            Label {
+                                text: qsTr("Trail")
+                                enabled: keyboardConfiguratorController.animHasDirection
+                            }
+
+                            Slider {
+                                width: 180
+                                from: 0
+                                to: 20
+                                stepSize: 1
+                                snapMode: Slider.SnapAlways
+
+                                enabled: keyboardConfiguratorController.animHasDirection
+
+                                value: keyboardConfiguratorController.animTrail
+
+                                onMoved: keyboardConfiguratorController.animTrail = value
+
+                                ToolTip.visible: hovered
+                                ToolTip.text: qsTr("How many keys glow behind the moving light, at any speed. Off uses the fade out time instead.")
+                                ToolTip.delay: mainWindowController.toolTipDelay
+                                ToolTip.timeout: mainWindowController.toolTipTimeout
+                            }
+
+                            Label {
+                                width: 80
+                                elide: Text.ElideRight
+                                enabled: keyboardConfiguratorController.animHasDirection
+                                text: keyboardConfiguratorController.animTrail === 0
+                                      ? qsTr("Off")
+                                      : (keyboardConfiguratorController.animTrail === 1
+                                         ? qsTr("1 key") : qsTr("%1 keys").arg(keyboardConfiguratorController.animTrail))
+                            }
+
+                            Label {
+                                text: qsTr("Fade shape")
+                                enabled: !animationControls.isBreathing
+                            }
+
+                            ComboBox {
+                                width: 180
+
+                                enabled: !animationControls.isBreathing
+
+                                model: [qsTr("Linear"), qsTr("Smooth"), qsTr("Comet")]
+
+                                currentIndex: keyboardConfiguratorController.animCurve
+
+                                onActivated: (index) => keyboardConfiguratorController.animCurve = index
+
+                                ToolTip.visible: hovered
+                                ToolTip.text: qsTr("Linear fades evenly, Smooth eases in and out, Comet keeps a bright head with a long faint tail")
+                                ToolTip.delay: mainWindowController.toolTipDelay
+                                ToolTip.timeout: mainWindowController.toolTipTimeout
+                            }
+
+                            Item {
+                                width: 80
+                                height: 1
                             }
 
                             Label {
